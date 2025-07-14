@@ -2,6 +2,7 @@
   "name": "smart-ocr",
   "version": "1.0.0",
   "main": "dist/index.js",
+  "type": "commonjs",
   "scripts": {
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
@@ -31,9 +32,8 @@
     "dist"
   ],
   "dependencies": {
-    "fs": "^0.0.1-security",
     "pdf2image": "^1.2.3",
-    "pdfjs-dist": "^5.1.91",
+    "pdfjs-dist": "^2.16.105",
     "sharp": "^0.34.2",
     "tesseract.js": "^6.0.1"
   }
