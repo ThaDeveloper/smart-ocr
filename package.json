@@ -32,9 +32,8 @@
     "dist"
   ],
   "dependencies": {
-    "pdf2image": "^1.2.3",
+    "canvas": "^3.1.2",
     "pdfjs-dist": "^2.16.105",
-    "sharp": "^0.34.2",
     "tesseract.js": "^6.0.1"
   }
 }

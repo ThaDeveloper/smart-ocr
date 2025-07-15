@@ -1,10 +1,8 @@
 import { createWorker, Worker } from "tesseract.js";
 import * as pdfjsLib from "pdfjs-dist";
-import sharp from "sharp";
 import fs from "fs/promises";
 import { TextItem } from "pdfjs-dist/types/src/display/api";
-import path from 'path';
-import os from 'os';
+import { createCanvas } from "canvas";
 
 /**
  * SmartOCR class for processing images and PDFs with OCR capabilities.
@@ -79,70 +77,63 @@ export class SmartOCR {
     return fullText;
   }
 
-/**
- * Processes scanned PDF pages through OCR
- * @param {string} pdfPath - Path to the PDF file
- * @returns {Promise<string>} Extracted text from all pages
- */
-private async ocrPDFPages(pdfPath: string): Promise<string> {
-  const pdfFile = path.resolve(pdfPath);
+  /**
+   * Processes a scanned PDF by rendering each page to an image and running OCR
+   * Uses pdfjs-dist to open the PDF.
+   * Renders each page into a canvas.
+   * Exports PNG images (via canvas).
+   * Runs Tesseract OCR on the PNGs.
+   * @param pdfPath The path to the PDF file.
+   * @returns The extracted text from all pages.
+   */
+  private async ocrPDFPages(pdfPath: string): Promise<string> {
+    const pdfData = await fs.readFile(pdfPath);
 
-  await fs.access(pdfFile); // throws if missing
-
-  const tempDir = path.join(os.tmpdir(), `pdf_images_${Date.now()}`);
-  await fs.mkdir(tempDir, { recursive: true });
-
-  try {
-    const { convertPDF } = await import('pdf2image');
-    const images = await convertPDF(path.resolve(pdfPath), {
-      density: 300,
-      quality: 100,
-      outputType: 'jpg',
+    // Load PDF
+    const loadingTask = pdfjsLib.getDocument({
+      data: pdfData,
+      verbosity: pdfjsLib.VerbosityLevel.ERRORS,
     });
 
-    let fullText = '';
+    const pdfDocument = await loadingTask.promise;
+    let fullText = "";
 
-    for (const { path: imagePath } of images) {
-      try {
-        const imageBuffer = await fs.readFile(imagePath); // ✅ read image file
-        const processedImage = await sharp(imageBuffer)
-          .resize(2000)
-          .greyscale()
-          .normalize()
-          .sharpen()
-          .toBuffer();
-    
-        const { data } = await this.worker.recognize(processedImage);
-        fullText += data.text + '\n\n';
-      } catch (error) {
-        console.error(`Error processing page ${imagePath}:`, error);
-        continue;
-      } finally {
-        try {
-          await fs.unlink(imagePath); // ✅ cleanup
-        } catch (cleanupError) {
-          console.error('Cleanup error:', cleanupError);
-        }
-      }
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.0 }); // adjust for higher DPI
+
+      // Create canvas
+      const canvas = createCanvas(viewport.width, viewport.height);
+      const context = canvas.getContext("2d");
+
+      const renderContext = {
+        canvasContext: context,
+        viewport,
+      };
+
+      // Render PDF page to canvas
+      await page.render(renderContext).promise;
+
+      // Convert canvas to PNG buffer
+      const pngBuffer = canvas.toBuffer("image/png");
+
+      // Feed buffer to Tesseract
+      const {
+        data: { text },
+      } = await this.worker.recognize(pngBuffer);
+
+      console.log(`Page ${pageNum} text:`, text);
+      fullText += text + "\n\n";
     }
-    
+
     return fullText;
-  } finally {
-    try {
-      await fs.rm(tempDir, { recursive: true });
-    } catch (dirError) {
-      console.error('Temp directory cleanup error:', dirError);
-    }
   }
-}
 
-
-    /**
+  /**
    * Terminates the OCR worker
    * @returns {Promise<void>} Promise that resolves when worker is terminated
    */
-    public async terminate(): Promise<void> {
-      await this.worker.terminate();
-    }
-  
+  public async terminate(): Promise<void> {
+    await this.worker.terminate();
+  }
 }

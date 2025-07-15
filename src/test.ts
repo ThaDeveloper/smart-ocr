@@ -16,7 +16,7 @@ async function runTests() {
     console.log("PDF Text Extraction Result:\n", pdfText);
 
     // Test scanned PDF
-    const scannedText = await ocr.processPDF(path.join(__dirname, "Degree.pdf"));
+    const scannedText = await ocr.processPDF(path.join(__dirname, "sample-scanned.pdf"));
     console.log("Scanned PDF OCR Result:\n", scannedText);
   } finally {
     await ocr.terminate();
