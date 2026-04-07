@@ -1,4 +1,4 @@
-import { createWorker, Worker } from "tesseract.js";
+import { createWorker, PSM, Worker } from "tesseract.js";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
 import fs from "fs/promises";
 import path from "path";
@@ -6,10 +6,21 @@ import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/
 import { createCanvas } from "canvas";
 
 type OCRWorkerOptions = Partial<NonNullable<Parameters<typeof createWorker>[2]>>;
+type RasterCanvas = ReturnType<typeof createCanvas>;
+type ContentBounds = { minX: number; minY: number; maxX: number; maxY: number };
 
 const DEFAULT_LANGUAGE = "eng";
 const DEFAULT_PDF_RENDER_SCALE = 2;
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".gif"]);
+const CONTENT_BLOCK_SIZE = 16;
+const CONTENT_PIXEL_LUMINANCE_THRESHOLD = 235;
+const CONTENT_BLOCK_DARK_PIXEL_RATIO = 0.03;
+const CONTENT_PADDING = 32;
+const MIN_COMPONENT_BLOCK_COUNT = 6;
+const MAX_SKIP_CROP_RATIO = 0.98;
+const MIN_OCR_CANVAS_WIDTH = 1200;
+const MIN_OCR_CANVAS_HEIGHT = 800;
+const MAX_OCR_UPSCALE_FACTOR = 2;
 
 /**
  * Runtime options for configuring OCR behavior.
@@ -204,7 +215,8 @@ export class SmartOCR {
       viewport,
     }).promise;
 
-    return this.recognizeImage(worker, canvas.toBuffer("image/png"));
+    const preparedCanvas = this.prepareCanvasForOCR(canvas);
+    return this.recognizeImage(worker, preparedCanvas.toBuffer("image/png"));
   }
 
   /**
@@ -241,6 +253,11 @@ export class SmartOCR {
       }
 
       this.worker = await createWorker(language, 1, this.workerOptions);
+      await this.worker.setParameters({
+        tessedit_pageseg_mode: PSM.AUTO,
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300",
+      });
       this.workerLanguageKey = normalizedLanguage;
     });
 
@@ -269,5 +286,224 @@ export class SmartOCR {
    */
   private static normalizeLanguage(language: string | string[]): string {
     return (Array.isArray(language) ? [...language] : [language]).join("+");
+  }
+
+  /**
+   * Crops large blank margins so OCR focuses on the primary content area.
+   * @param {RasterCanvas} canvas - Rendered page image.
+   * @returns {RasterCanvas} Original canvas or a cropped version when useful.
+   */
+  private prepareCanvasForOCR(canvas: RasterCanvas): RasterCanvas {
+    const bounds = this.findContentBounds(canvas);
+    const contentCanvas = bounds ? this.cropCanvas(canvas, bounds) : canvas;
+    return this.upscaleCanvasForOCR(contentCanvas);
+  }
+
+  /**
+   * Locates the union of meaningful content regions inside a rendered page.
+   * @param {RasterCanvas} canvas - Rendered page image.
+   * @returns {ContentBounds | null} Bounding box of page content, or null when no better crop is found.
+   */
+  private findContentBounds(canvas: RasterCanvas): ContentBounds | null {
+    const context = canvas.getContext("2d");
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    const columns = Math.ceil(canvas.width / CONTENT_BLOCK_SIZE);
+    const rows = Math.ceil(canvas.height / CONTENT_BLOCK_SIZE);
+    const activeBlocks = Array.from({ length: rows }, () => Array(columns).fill(false));
+
+    for (let blockY = 0; blockY < rows; blockY++) {
+      for (let blockX = 0; blockX < columns; blockX++) {
+        let darkPixels = 0;
+        let totalPixels = 0;
+
+        for (let y = blockY * CONTENT_BLOCK_SIZE; y < Math.min(canvas.height, (blockY + 1) * CONTENT_BLOCK_SIZE); y++) {
+          for (let x = blockX * CONTENT_BLOCK_SIZE; x < Math.min(canvas.width, (blockX + 1) * CONTENT_BLOCK_SIZE); x++) {
+            const offset = (y * canvas.width + x) * 4;
+            const red = data[offset];
+            const green = data[offset + 1];
+            const blue = data[offset + 2];
+            const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+
+            if (luminance < CONTENT_PIXEL_LUMINANCE_THRESHOLD) {
+              darkPixels += 1;
+            }
+
+            totalPixels += 1;
+          }
+        }
+
+        activeBlocks[blockY][blockX] = darkPixels / totalPixels > CONTENT_BLOCK_DARK_PIXEL_RATIO;
+      }
+    }
+
+    const meaningfulComponents = this.findMeaningfulComponents(activeBlocks, columns, rows);
+    if (meaningfulComponents.length === 0) {
+      return null;
+    }
+
+    const blockBounds = meaningfulComponents.reduce<ContentBounds>(
+      (bounds, component) => ({
+        minX: Math.min(bounds.minX, component.minX),
+        minY: Math.min(bounds.minY, component.minY),
+        maxX: Math.max(bounds.maxX, component.maxX),
+        maxY: Math.max(bounds.maxY, component.maxY),
+      }),
+      { minX: columns, minY: rows, maxX: -1, maxY: -1 },
+    );
+
+    const pixelBounds = {
+      minX: Math.max(0, blockBounds.minX * CONTENT_BLOCK_SIZE - CONTENT_PADDING),
+      minY: Math.max(0, blockBounds.minY * CONTENT_BLOCK_SIZE - CONTENT_PADDING),
+      maxX: Math.min(canvas.width - 1, (blockBounds.maxX + 1) * CONTENT_BLOCK_SIZE - 1 + CONTENT_PADDING),
+      maxY: Math.min(canvas.height - 1, (blockBounds.maxY + 1) * CONTENT_BLOCK_SIZE - 1 + CONTENT_PADDING),
+    };
+
+    const croppedArea = (pixelBounds.maxX - pixelBounds.minX + 1) * (pixelBounds.maxY - pixelBounds.minY + 1);
+    const fullArea = canvas.width * canvas.height;
+
+    return croppedArea / fullArea >= MAX_SKIP_CROP_RATIO ? null : pixelBounds;
+  }
+
+  /**
+   * Finds non-noise connected regions in the active block grid.
+   * @param {boolean[][]} activeBlocks - Coarse content grid derived from luminance.
+   * @param {number} columns - Number of block columns.
+   * @param {number} rows - Number of block rows.
+   * @returns {Array<ContentBounds & { width: number; height: number; count: number }>} Connected components worth keeping.
+   */
+  private findMeaningfulComponents(
+    activeBlocks: boolean[][],
+    columns: number,
+    rows: number,
+  ): Array<ContentBounds & { width: number; height: number; count: number }> {
+    const visited = Array.from({ length: rows }, () => Array(columns).fill(false));
+    const components: Array<ContentBounds & { width: number; height: number; count: number }> = [];
+    const offsets = [-1, 0, 1];
+
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        if (!activeBlocks[row][column] || visited[row][column]) {
+          continue;
+        }
+
+        const queue: Array<[number, number]> = [[column, row]];
+        visited[row][column] = true;
+        let minX = column;
+        let minY = row;
+        let maxX = column;
+        let maxY = row;
+        let count = 0;
+
+        while (queue.length > 0) {
+          const [currentX, currentY] = queue.shift()!;
+          count += 1;
+          minX = Math.min(minX, currentX);
+          minY = Math.min(minY, currentY);
+          maxX = Math.max(maxX, currentX);
+          maxY = Math.max(maxY, currentY);
+
+          for (const offsetY of offsets) {
+            for (const offsetX of offsets) {
+              if (offsetX === 0 && offsetY === 0) {
+                continue;
+              }
+
+              const nextX = currentX + offsetX;
+              const nextY = currentY + offsetY;
+
+              if (nextX < 0 || nextY < 0 || nextX >= columns || nextY >= rows) {
+                continue;
+              }
+
+              if (!activeBlocks[nextY][nextX] || visited[nextY][nextX]) {
+                continue;
+              }
+
+              visited[nextY][nextX] = true;
+              queue.push([nextX, nextY]);
+            }
+          }
+        }
+
+        const component = {
+          minX,
+          minY,
+          maxX,
+          maxY,
+          count,
+          width: maxX - minX + 1,
+          height: maxY - minY + 1,
+        };
+
+        if (this.isMeaningfulComponent(component, columns, rows)) {
+          components.push(component);
+        }
+      }
+    }
+
+    return components;
+  }
+
+  /**
+   * Filters out scanner edges and isolated specks that should not drive cropping.
+   * @param {ContentBounds & { width: number; height: number; count: number }} component - Candidate component.
+   * @param {number} columns - Number of block columns.
+   * @param {number} rows - Number of block rows.
+   * @returns {boolean} True when the component likely represents actual document content.
+   */
+  private isMeaningfulComponent(
+    component: ContentBounds & { width: number; height: number; count: number },
+    columns: number,
+    rows: number,
+  ): boolean {
+    if (component.count < MIN_COMPONENT_BLOCK_COUNT) {
+      return false;
+    }
+
+    const touchesEdge =
+      component.minX === 0 || component.minY === 0 || component.maxX === columns - 1 || component.maxY === rows - 1;
+    const shortSide = Math.min(component.width, component.height);
+
+    return !(touchesEdge && shortSide <= 2);
+  }
+
+  /**
+   * Copies the selected content bounds into a new canvas.
+   * @param {RasterCanvas} canvas - Source page canvas.
+   * @param {ContentBounds} bounds - Pixel bounds to keep.
+   * @returns {RasterCanvas} Cropped canvas.
+   */
+  private cropCanvas(canvas: RasterCanvas, bounds: ContentBounds): RasterCanvas {
+    const width = bounds.maxX - bounds.minX + 1;
+    const height = bounds.maxY - bounds.minY + 1;
+    const croppedCanvas = createCanvas(width, height);
+    const croppedContext = croppedCanvas.getContext("2d");
+
+    croppedContext.drawImage(canvas, bounds.minX, bounds.minY, width, height, 0, 0, width, height);
+
+    return croppedCanvas;
+  }
+
+  /**
+   * Enlarges small content regions so OCR has more usable detail.
+   * @param {RasterCanvas} canvas - Cropped page canvas.
+   * @returns {RasterCanvas} Original canvas or an upscaled version when the content is small.
+   */
+  private upscaleCanvasForOCR(canvas: RasterCanvas): RasterCanvas {
+    const scaleFactor = Math.min(
+      MAX_OCR_UPSCALE_FACTOR,
+      Math.max(MIN_OCR_CANVAS_WIDTH / canvas.width, MIN_OCR_CANVAS_HEIGHT / canvas.height, 1),
+    );
+
+    if (scaleFactor <= 1) {
+      return canvas;
+    }
+
+    const upscaledCanvas = createCanvas(Math.ceil(canvas.width * scaleFactor), Math.ceil(canvas.height * scaleFactor));
+    const upscaledContext = upscaledCanvas.getContext("2d");
+    upscaledContext.imageSmoothingEnabled = true;
+    upscaledContext.drawImage(canvas, 0, 0, upscaledCanvas.width, upscaledCanvas.height);
+
+    return upscaledCanvas;
   }
 }

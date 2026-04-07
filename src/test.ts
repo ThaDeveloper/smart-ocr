@@ -21,10 +21,9 @@ async function runTests() {
   const ocr = new SmartOCR({ language: "eng" });
 
   try {
-    // await runSample(ocr, "Image OCR Result", "sample-image.png");
-    // await runSample(ocr, "PDF Text Extraction Result", "sample-pdf.pdf");
-    await runSample(ocr, "Scanned PDF OCR Result", "id.pdf");
-    //  await runSample(ocr, "Scanned PDF OCR Result", "Degree.pdf");
+    await runSample(ocr, "Image OCR Result", "sample-image.png");
+    await runSample(ocr, "PDF Text Extraction Result", "sample-pdf.pdf");
+    await runSample(ocr, "Scanned PDF OCR Result", "sample-scanned.pdf");
   } finally {
     await ocr.terminate();
   }
