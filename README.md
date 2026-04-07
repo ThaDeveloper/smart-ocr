@@ -31,19 +31,17 @@ npm install smart-ocr
 
 ```ts
 import { SmartOCR } from "smart-ocr";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const ocr = new SmartOCR({ language: "eng" });
 
 try {
-  await ocr.init("spa");
-
-  const pdfText = await ocr.processPDF("./document.pdf");
-  const imageText = await ocr.processImage("./page.png");
-  const autoText = await ocr.processFile("./document.pdf");
-
+  const pdfText = await ocr.processPDF(path.join(__dirname, "sample-scanned.pdf"));
   console.log(pdfText);
-  console.log(imageText);
-  console.log(autoText);
 } finally {
   await ocr.terminate();
 }
