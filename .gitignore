@@ -1,5 +1,6 @@
 /node_modules
 /dist
+/dist-tests
 .DS_store
 *.traineddata
 Degree.pdf

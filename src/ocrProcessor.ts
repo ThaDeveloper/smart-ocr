@@ -79,7 +79,7 @@ export class SmartOCR {
     }
 
     throw new Error(
-      `Unsupported file type "${extension || "(none)"}". SmartOCR currently supports PDFs and common image formats.`,
+      `Unsupported file type "${extension || "(none)"}". SmartOCR currently supports PDFs and common image formats.`
     );
   }
 
@@ -275,7 +275,10 @@ export class SmartOCR {
    */
   private async runWorkerTask(action: () => Promise<void>): Promise<void> {
     const nextTask = this.workerTask.catch(() => undefined).then(action);
-    this.workerTask = nextTask.then(() => undefined, () => undefined);
+    this.workerTask = nextTask.then(
+      () => undefined,
+      () => undefined
+    );
     await nextTask;
   }
 
@@ -317,7 +320,11 @@ export class SmartOCR {
         let totalPixels = 0;
 
         for (let y = blockY * CONTENT_BLOCK_SIZE; y < Math.min(canvas.height, (blockY + 1) * CONTENT_BLOCK_SIZE); y++) {
-          for (let x = blockX * CONTENT_BLOCK_SIZE; x < Math.min(canvas.width, (blockX + 1) * CONTENT_BLOCK_SIZE); x++) {
+          for (
+            let x = blockX * CONTENT_BLOCK_SIZE;
+            x < Math.min(canvas.width, (blockX + 1) * CONTENT_BLOCK_SIZE);
+            x++
+          ) {
             const offset = (y * canvas.width + x) * 4;
             const red = data[offset];
             const green = data[offset + 1];
@@ -348,7 +355,7 @@ export class SmartOCR {
         maxX: Math.max(bounds.maxX, component.maxX),
         maxY: Math.max(bounds.maxY, component.maxY),
       }),
-      { minX: columns, minY: rows, maxX: -1, maxY: -1 },
+      { minX: columns, minY: rows, maxX: -1, maxY: -1 }
     );
 
     const pixelBounds = {
@@ -374,7 +381,7 @@ export class SmartOCR {
   private findMeaningfulComponents(
     activeBlocks: boolean[][],
     columns: number,
-    rows: number,
+    rows: number
   ): Array<ContentBounds & { width: number; height: number; count: number }> {
     const visited = Array.from({ length: rows }, () => Array(columns).fill(false));
     const components: Array<ContentBounds & { width: number; height: number; count: number }> = [];
@@ -454,7 +461,7 @@ export class SmartOCR {
   private isMeaningfulComponent(
     component: ContentBounds & { width: number; height: number; count: number },
     columns: number,
-    rows: number,
+    rows: number
   ): boolean {
     if (component.count < MIN_COMPONENT_BLOCK_COUNT) {
       return false;
@@ -492,7 +499,7 @@ export class SmartOCR {
   private upscaleCanvasForOCR(canvas: RasterCanvas): RasterCanvas {
     const scaleFactor = Math.min(
       MAX_OCR_UPSCALE_FACTOR,
-      Math.max(MIN_OCR_CANVAS_WIDTH / canvas.width, MIN_OCR_CANVAS_HEIGHT / canvas.height, 1),
+      Math.max(MIN_OCR_CANVAS_WIDTH / canvas.width, MIN_OCR_CANVAS_HEIGHT / canvas.height, 1)
     );
 
     if (scaleFactor <= 1) {

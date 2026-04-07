@@ -10,8 +10,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "sample": "npm run build && node dist/test.js",
-    "test": "npm run typecheck",
-    "prepublishOnly": "npm run typecheck && npm run build"
+    "test:unit": "tsc -p tsconfig.tests.json && node dist-tests/tests/ocrProcessor.test.js",
+    "test": "npm run typecheck && npm run test:unit",
+    "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [],
   "author": "",

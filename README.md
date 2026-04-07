@@ -66,6 +66,7 @@ Stops the Tesseract worker and frees related resources.
 
 ```bash
 npm run typecheck
+npm test
 npm run build
 npm run sample
 ```
