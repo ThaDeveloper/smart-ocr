@@ -1,6 +1,6 @@
 {
   "name": "smart-ocr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OCR library for PNG images and both scanned and text-based PDFs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
