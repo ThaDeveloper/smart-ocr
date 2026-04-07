@@ -45,7 +45,7 @@ export class SmartOCR {
 
   /**
    * Creates an OCR processor for images and PDFs.
-   * @param {SmartOCROptions} [options] - Runtime options for the OCR worker and PDF rendering.
+   * @param options Runtime options for the OCR worker and PDF rendering.
    */
   constructor(options: SmartOCROptions = {}) {
     this.defaultLanguage = options.language ?? DEFAULT_LANGUAGE;
@@ -55,8 +55,8 @@ export class SmartOCR {
 
   /**
    * Initializes the OCR worker with specified language(s)
-   * @param {string|string[]} [language=this.defaultLanguage] - Language(s) to use for OCR processing
-   * @returns {Promise<void>} Promise that resolves when initialization is complete
+   * @param language Language(s) to use for OCR processing
+   * @returns Promise that resolves when initialization is complete
    */
   public async init(language: string | string[] = this.defaultLanguage): Promise<void> {
     await this.ensureInitialized(language);
@@ -64,8 +64,8 @@ export class SmartOCR {
 
   /**
    * Processes a file by routing it to the appropriate OCR strategy.
-   * @param {string} filePath - Path to a supported PDF or image file.
-   * @returns {Promise<string>} Extracted text from the file.
+   * @param filePath Path to a supported PDF or image file.
+   * @returns Extracted text from the file.
    */
   public async processFile(filePath: string): Promise<string> {
     const extension = path.extname(filePath).toLowerCase();
@@ -85,8 +85,8 @@ export class SmartOCR {
 
   /**
    * Process OCR on an image file
-   * @param {string} imagePath - Path to the image file
-   * @returns {Promise<string>} Extracted text from the image
+   * @param imagePath Path to the image file
+   * @returns Extracted text from the image
    */
   public async processImage(imagePath: string): Promise<string> {
     const worker = await this.ensureInitialized();
@@ -95,8 +95,8 @@ export class SmartOCR {
 
   /**
    * Process OCR on a PDF file (both scanned and non-scanned)
-   * @param {string} pdfPath - Path to the PDF file
-   * @returns {Promise<string>} Extracted text from all pages
+   * @param pdfPath Path to the PDF file
+   * @returns Extracted text from all pages
    */
   public async processPDF(pdfPath: string): Promise<string> {
     const pdfDocument = await this.loadPDFDocument(pdfPath);
@@ -124,7 +124,7 @@ export class SmartOCR {
 
   /**
    * Terminates the OCR worker
-   * @returns {Promise<void>} Promise that resolves when worker shutdown completes.
+   * @returns Promise that resolves when worker shutdown completes.
    */
   public async terminate(): Promise<void> {
     await this.runWorkerTask(async () => {
@@ -141,8 +141,8 @@ export class SmartOCR {
 
   /**
    * Loads a PDF document for text extraction or OCR.
-   * @param {string} pdfPath - Path to the PDF file.
-   * @returns {Promise<PDFDocumentProxy>} Loaded PDF document instance.
+   * @param pdfPath Path to the PDF file.
+   * @returns Loaded PDF document instance.
    */
   private async loadPDFDocument(pdfPath: string): Promise<PDFDocumentProxy> {
     const pdfData = await fs.readFile(pdfPath);
@@ -158,8 +158,8 @@ export class SmartOCR {
 
   /**
    * Extracts text from a single page and falls back to OCR when needed.
-   * @param {PDFPageProxy} page - PDF page to process.
-   * @returns {Promise<string>} Extracted text for the page.
+   * @param page PDF page to process.
+   * @returns Extracted text for the page.
    */
   private async extractPageTextWithFallback(page: PDFPageProxy): Promise<string> {
     try {
@@ -177,8 +177,8 @@ export class SmartOCR {
 
   /**
    * Extracts searchable text from a single PDF page.
-   * @param {PDFPageProxy} page - PDF page containing selectable text.
-   * @returns {Promise<string>} Extracted page text.
+   * @param page PDF page containing selectable text.
+   * @returns Extracted page text.
    */
   private async extractPageText(page: PDFPageProxy): Promise<string> {
     const content = await page.getTextContent();
@@ -192,8 +192,8 @@ export class SmartOCR {
 
   /**
    * Determines whether extracted text is meaningful enough to skip OCR.
-   * @param {string} text - Candidate extracted page text.
-   * @returns {boolean} True when the page already contains usable text.
+   * @param text Candidate extracted page text.
+   * @returns True when the page already contains usable text.
    */
   private hasUsableText(text: string): boolean {
     return text.replace(/\s+/g, "").length > 0;
@@ -201,9 +201,9 @@ export class SmartOCR {
 
   /**
    * Renders a PDF page to an image and runs OCR on the result.
-   * @param {PDFPageProxy} page - PDF page to OCR.
-   * @param {Worker} worker - Initialized Tesseract worker.
-   * @returns {Promise<string>} OCR text for the page.
+   * @param page PDF page to OCR.
+   * @param worker Initialized Tesseract worker.
+   * @returns OCR text for the page.
    */
   private async ocrPage(page: PDFPageProxy, worker: Worker): Promise<string> {
     const viewport = page.getViewport({ scale: this.pdfRenderScale });
@@ -221,9 +221,9 @@ export class SmartOCR {
 
   /**
    * Runs OCR on a raster image or buffer.
-   * @param {Worker} worker - Initialized Tesseract worker.
-   * @param {string|Buffer} image - Image path or in-memory image buffer.
-   * @returns {Promise<string>} OCR text from the image.
+   * @param worker Initialized Tesseract worker.
+   * @param image Image path or in-memory image buffer.
+   * @returns OCR text from the image.
    */
   private async recognizeImage(worker: Worker, image: string | Buffer): Promise<string> {
     const {
@@ -235,8 +235,8 @@ export class SmartOCR {
 
   /**
    * Ensures that exactly one worker is initialized for the requested language.
-   * @param {string|string[]} [language=this.defaultLanguage] - Language(s) to initialize.
-   * @returns {Promise<Worker>} Ready-to-use Tesseract worker.
+   * @param language Language(s) to initialize.
+   * @returns Ready-to-use Tesseract worker.
    */
   private async ensureInitialized(language: string | string[] = this.defaultLanguage): Promise<Worker> {
     const normalizedLanguage = SmartOCR.normalizeLanguage(language);
@@ -270,8 +270,8 @@ export class SmartOCR {
 
   /**
    * Serializes worker lifecycle operations so initialization and shutdown cannot race.
-   * @param {() => Promise<void>} action - Worker lifecycle action to run.
-   * @returns {Promise<void>} Promise that resolves when the action completes.
+   * @param action Worker lifecycle action to run.
+   * @returns Promise that resolves when the action completes.
    */
   private async runWorkerTask(action: () => Promise<void>): Promise<void> {
     const nextTask = this.workerTask.catch(() => undefined).then(action);
@@ -284,8 +284,8 @@ export class SmartOCR {
 
   /**
    * Normalizes the language argument for worker reuse checks.
-   * @param {string|string[]} language - OCR language or language list.
-   * @returns {string} Stable cache key for the requested language.
+   * @param language OCR language or language list.
+   * @returns Stable cache key for the requested language.
    */
   private static normalizeLanguage(language: string | string[]): string {
     return (Array.isArray(language) ? [...language] : [language]).join("+");
@@ -293,8 +293,8 @@ export class SmartOCR {
 
   /**
    * Crops large blank margins so OCR focuses on the primary content area.
-   * @param {RasterCanvas} canvas - Rendered page image.
-   * @returns {RasterCanvas} Original canvas or a cropped version when useful.
+   * @param canvas Rendered page image.
+   * @returns Original canvas or a cropped version when useful.
    */
   private prepareCanvasForOCR(canvas: RasterCanvas): RasterCanvas {
     const bounds = this.findContentBounds(canvas);
@@ -304,8 +304,8 @@ export class SmartOCR {
 
   /**
    * Locates the union of meaningful content regions inside a rendered page.
-   * @param {RasterCanvas} canvas - Rendered page image.
-   * @returns {ContentBounds | null} Bounding box of page content, or null when no better crop is found.
+   * @param canvas Rendered page image.
+   * @returns Bounding box of page content, or null when no better crop is found.
    */
   private findContentBounds(canvas: RasterCanvas): ContentBounds | null {
     const context = canvas.getContext("2d");
@@ -373,10 +373,10 @@ export class SmartOCR {
 
   /**
    * Finds non-noise connected regions in the active block grid.
-   * @param {boolean[][]} activeBlocks - Coarse content grid derived from luminance.
-   * @param {number} columns - Number of block columns.
-   * @param {number} rows - Number of block rows.
-   * @returns {Array<ContentBounds & { width: number; height: number; count: number }>} Connected components worth keeping.
+   * @param activeBlocks Coarse content grid derived from luminance.
+   * @param columns Number of block columns.
+   * @param rows Number of block rows.
+   * @returns Connected components worth keeping.
    */
   private findMeaningfulComponents(
     activeBlocks: boolean[][],
@@ -453,10 +453,10 @@ export class SmartOCR {
 
   /**
    * Filters out scanner edges and isolated specks that should not drive cropping.
-   * @param {ContentBounds & { width: number; height: number; count: number }} component - Candidate component.
-   * @param {number} columns - Number of block columns.
-   * @param {number} rows - Number of block rows.
-   * @returns {boolean} True when the component likely represents actual document content.
+   * @param component Candidate component.
+   * @param columns Number of block columns.
+   * @param rows Number of block rows.
+   * @returns True when the component likely represents actual document content.
    */
   private isMeaningfulComponent(
     component: ContentBounds & { width: number; height: number; count: number },
@@ -476,9 +476,9 @@ export class SmartOCR {
 
   /**
    * Copies the selected content bounds into a new canvas.
-   * @param {RasterCanvas} canvas - Source page canvas.
-   * @param {ContentBounds} bounds - Pixel bounds to keep.
-   * @returns {RasterCanvas} Cropped canvas.
+   * @param canvas Source page canvas.
+   * @param bounds Pixel bounds to keep.
+   * @returns Cropped canvas.
    */
   private cropCanvas(canvas: RasterCanvas, bounds: ContentBounds): RasterCanvas {
     const width = bounds.maxX - bounds.minX + 1;
@@ -493,8 +493,8 @@ export class SmartOCR {
 
   /**
    * Enlarges small content regions so OCR has more usable detail.
-   * @param {RasterCanvas} canvas - Cropped page canvas.
-   * @returns {RasterCanvas} Original canvas or an upscaled version when the content is small.
+   * @param canvas Cropped page canvas.
+   * @returns Original canvas or an upscaled version when the content is small.
    */
   private upscaleCanvasForOCR(canvas: RasterCanvas): RasterCanvas {
     const scaleFactor = Math.min(

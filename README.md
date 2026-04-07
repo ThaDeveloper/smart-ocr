@@ -1,12 +1,20 @@
 # Smart OCR
 
-`smart-ocr` extracts text from:
+`smart-ocr` is a Node.js OCR library for:
 
 - text-based PDFs
 - scanned PDFs
-- PNG and other common raster image files
+- mixed PDFs with both text-native and scanned pages
+- PNG and other common raster image formats
 
-For PDFs, it checks each page individually. Pages with selectable text are read directly, and image-only pages fall back to OCR.
+For PDFs, each page is handled independently. If a page already contains selectable text, Smart OCR extracts it directly. If a page is image-only, it renders the page and falls back to OCR.
+
+## Requirements
+
+- Node.js `>=18.18`
+- an environment that can install and run [`canvas`](https://www.npmjs.com/package/canvas)
+
+This package is designed for Node.js. It is not set up for browser use.
 
 ## Installation
 
@@ -14,7 +22,7 @@ For PDFs, it checks each page individually. Pages with selectable text are read 
 npm install smart-ocr
 ```
 
-## Usage
+## Quick Start
 
 ```ts
 import { SmartOCR } from "smart-ocr";
@@ -24,9 +32,11 @@ const ocr = new SmartOCR({ language: "eng" });
 try {
   const pdfText = await ocr.processPDF("./document.pdf");
   const imageText = await ocr.processImage("./page.png");
-  const autoText = await ocr.processFile("./anything.pdf");
+  const autoText = await ocr.processFile("./document.pdf");
 
-  console.log(pdfText, imageText, autoText);
+  console.log(pdfText);
+  console.log(imageText);
+  console.log(autoText);
 } finally {
   await ocr.terminate();
 }
@@ -36,19 +46,33 @@ try {
 
 ### `new SmartOCR(options?)`
 
+Creates an OCR processor.
+
 Options:
 
-- `language`: Tesseract language or language list. Defaults to `"eng"`.
-- `pdfRenderScale`: Render scale used before OCRing scanned PDF pages. Defaults to `2`.
-- `workerOptions`: Tesseract worker options such as `langPath`, `cachePath`, or `logger`.
+- `language`: Tesseract language or language list. Default: `"eng"`
+- `pdfRenderScale`: render scale used before OCR on scanned PDF pages. Default: `2`
+- `workerOptions`: options passed to the Tesseract worker, such as `langPath`, `cachePath`, or `logger`
 
 ### `processFile(filePath)`
 
-Routes supported files to the right handler based on extension.
+Routes a supported file to the correct handler based on file extension.
+
+Supported extensions:
+
+- `.pdf`
+- `.png`
+- `.jpg`
+- `.jpeg`
+- `.tif`
+- `.tiff`
+- `.bmp`
+- `.webp`
+- `.gif`
 
 ### `processPDF(pdfPath)`
 
-Extracts text from each PDF page, using OCR only when direct text extraction is unavailable for that page.
+Extracts text from a PDF. Text-native pages are read directly. Scanned pages are rendered to images and OCRed.
 
 ### `processImage(imagePath)`
 
@@ -56,17 +80,30 @@ Runs OCR on an image file.
 
 ### `init(language?)`
 
-Eagerly initializes the OCR worker. This is optional because processing methods initialize on demand.
+Eagerly initializes the Tesseract worker. This is optional because processing methods initialize on demand.
 
 ### `terminate()`
 
-Stops the Tesseract worker and frees related resources.
+Terminates the Tesseract worker and frees resources.
+
+## Notes
+
+- Smart OCR is optimized for Node.js workloads, not browser runtimes.
+- Scanned PDFs are preprocessed before OCR so sparse content, such as ID cards on large blank pages, is easier to detect.
+- OCR quality still depends on the source document quality, scan resolution, and language data.
 
 ## Development
 
 ```bash
 npm run typecheck
+npm run lint
 npm test
 npm run build
 npm run sample
 ```
+
+`npm run sample` builds the library and runs it against the bundled sample files in `src/`.
+
+## License
+
+MIT

@@ -1,23 +1,48 @@
 {
   "name": "smart-ocr",
   "version": "1.0.0",
+  "description": "OCR library for PNG images and both scanned and text-based PDFs",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
   "scripts": {
-    "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix",
+    "lint": "eslint src tests eslint.config.mjs --ext .ts",
+    "lint:fix": "eslint src tests eslint.config.mjs --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" README.md",
     "typecheck": "tsc --noEmit",
-    "build": "tsc",
-    "sample": "npm run build && node dist/test.js",
+    "build": "node scripts/build.js",
+    "sample": "npm run build && node scripts/run-sample.js",
     "test:unit": "tsc -p tsconfig.tests.json && node dist-tests/tests/ocrProcessor.test.js",
     "test": "npm run typecheck && npm run test:unit",
     "prepublishOnly": "npm test && npm run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ocr",
+    "pdf",
+    "png",
+    "image",
+    "tesseract",
+    "pdfjs",
+    "scanned-pdf",
+    "text-extraction"
+  ],
   "license": "MIT",
-  "description": "OCR library for PNG images and both scanned and text-based PDFs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThaDeveloper/smart-ocr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ThaDeveloper/smart-ocr/issues"
+  },
+  "homepage": "https://github.com/ThaDeveloper/smart-ocr#readme",
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/node": "^22.15.27",
@@ -29,9 +54,9 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.33.0"
   },
-  "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "dependencies": {
     "canvas": "^3.1.2",
