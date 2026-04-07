@@ -1,7 +1,7 @@
 {
   "name": "smart-ocr",
-  "version": "1.0.2",
-  "description": "OCR library for PNG images and both scanned and text-based PDFs",
+  "version": "1.0.3",
+  "description": "OCR library for both scanned and text-based PDFs in .pdf or image format using tesseract.js",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "commonjs",
@@ -32,7 +32,10 @@
     "tesseract",
     "pdfjs",
     "scanned-pdf",
-    "text-extraction"
+    "text-extraction",
+    "pdf ocr",
+    "optical character recognition",
+    "pdf text extraction"
   ],
   "license": "MIT",
   "repository": {
