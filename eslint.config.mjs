@@ -6,14 +6,15 @@ import jsdoc from "eslint-plugin-jsdoc";
 export default tseslint.config(
   eslint.configs.recommended,
   {
-    ignores: ["dist/**", "node_modules/**", "**/*.d.ts"],
+    ignores: ["dist/**", "dist-tests/**", "node_modules/**", "**/*.d.ts"],
   },
   tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
       parserOptions: {
-        project: true,
+        project: ["./tsconfig.json", "./tsconfig.tests.json"],
+        tsconfigRootDir: import.meta.dirname,
       },
       globals: {
         ...globals.node, // Adds Node.js globals like 'exports'
@@ -65,9 +66,7 @@ export default tseslint.config(
                             "TSEnumDeclaration",
                             "TSInterfaceDeclaration",
                             "TSMethodDeclaration",
-                            "TSMethodSignature",
-                            "TSPropertySignature:not(TSTypeLiteral > TSPropertySignature)",
-                            "TSTypeAliasDeclaration"
+                            "TSMethodSignature"
                         ]
                     }
                 ],
@@ -100,6 +99,12 @@ export default tseslint.config(
                     ]
                 }
             ]
+    },
+  },
+  {
+    files: ["src/test.ts", "tests/**/*.ts"],
+    rules: {
+      "no-console": "off",
     },
   }
 );
