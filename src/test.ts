@@ -1,23 +1,30 @@
 import { SmartOCR } from "./ocrProcessor";
 import path from "path";
 
+const sampleDirectory = path.resolve(__dirname, "..", "src");
+
+/**
+ * Runs OCR against one of the bundled sample files.
+ * @param {SmartOCR} ocr - OCR processor instance.
+ * @param {string} label - Label printed before the OCR result.
+ * @param {string} fileName - Sample file name inside the src directory.
+ * @returns {Promise<void>} Promise that resolves when the sample has been processed.
+ */
+async function runSample(ocr: SmartOCR, label: string, fileName: string): Promise<void> {
+  const filePath = path.join(sampleDirectory, fileName);
+  const text = await ocr.processFile(filePath);
+  console.log(`${label}:\n`, text);
+}
+
 /** Testing the service. */
 async function runTests() {
-  const ocr = new SmartOCR();
-  await ocr.init("eng");
+  const ocr = new SmartOCR({ language: "eng" });
 
   try {
-    // Test image processing
-    const imageText = await ocr.processImage(path.join(__dirname, "sample-image.png"));
-    console.log("Image OCR Result:\n", imageText);
-
-    // Test PDF with text
-    const pdfText = await ocr.processPDF(path.join(__dirname, "sample-pdf.pdf"));
-    console.log("PDF Text Extraction Result:\n", pdfText);
-
-    // Test scanned PDF
-    const scannedText = await ocr.processPDF(path.join(__dirname, "sample-scanned.pdf"));
-    console.log("Scanned PDF OCR Result:\n", scannedText);
+    // await runSample(ocr, "Image OCR Result", "sample-image.png");
+    // await runSample(ocr, "PDF Text Extraction Result", "sample-pdf.pdf");
+    await runSample(ocr, "Scanned PDF OCR Result", "id.pdf");
+    //  await runSample(ocr, "Scanned PDF OCR Result", "Degree.pdf");
   } finally {
     await ocr.terminate();
   }

@@ -6,15 +6,17 @@
   "scripts": {
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "prebuild": "npm run lint && npm run format",
+    "format": "prettier --write \"src/**/*.ts\" README.md",
+    "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "prepublishOnly": "npm run build"
+    "sample": "npm run build && node dist/test.js",
+    "test": "npm run typecheck",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
-  "description": "",
+  "description": "OCR library for PNG images and both scanned and text-based PDFs",
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/node": "^22.15.27",

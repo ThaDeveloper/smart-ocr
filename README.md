@@ -1,81 +1,71 @@
 # Smart OCR
 
-[![npm version](https://badge.fury.io/js/smart-ocr.svg)](https://badge.fury.io/js/smart-ocr)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/thadeveloper/smart-ocr/actions/workflows/ci.yml/badge.svg)](https://github.com/thadeveloper/smart-ocr/actions)
+`smart-ocr` extracts text from:
 
-A brief description of what your package does.
+- text-based PDFs
+- scanned PDFs
+- PNG and other common raster image files
 
-## Features
-
-- 
+For PDFs, it checks each page individually. Pages with selectable text are read directly, and image-only pages fall back to OCR.
 
 ## Installation
 
 ```bash
 npm install smart-ocr
-# or
-yarn add smart-ocr
 ```
 
 ## Usage
 
-```typescript
-import { greet } from 'smart-ocr';
+```ts
+import { SmartOCR } from "smart-ocr";
 
-console.log(greet('World')); // Output: Hello, World!
+const ocr = new SmartOCR({ language: "eng" });
+
+try {
+  const pdfText = await ocr.processPDF("./document.pdf");
+  const imageText = await ocr.processImage("./page.png");
+  const autoText = await ocr.processFile("./anything.pdf");
+
+  console.log(pdfText, imageText, autoText);
+} finally {
+  await ocr.terminate();
+}
 ```
 
-### Advanced Usage
+## API
 
-```typescript
-// More complex examples here
-```
+### `new SmartOCR(options?)`
 
-## API Reference
+Options:
 
-### `greet(name: string): string`
+- `language`: Tesseract language or language list. Defaults to `"eng"`.
+- `pdfRenderScale`: Render scale used before OCRing scanned PDF pages. Defaults to `2`.
+- `workerOptions`: Tesseract worker options such as `langPath`, `cachePath`, or `logger`.
 
-Returns a greeting message.
+### `processFile(filePath)`
 
-**Parameters:**
-- `name` - The name to greet
+Routes supported files to the right handler based on extension.
 
-**Returns:**
-- A greeting string
+### `processPDF(pdfPath)`
 
-## Contributing
+Extracts text from each PDF page, using OCR only when direct text extraction is unavailable for that page.
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you'd like to change.
+### `processImage(imagePath)`
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Runs OCR on an image file.
+
+### `init(language?)`
+
+Eagerly initializes the OCR worker. This is optional because processing methods initialize on demand.
+
+### `terminate()`
+
+Stops the Tesseract worker and frees related resources.
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Build the project
+npm run typecheck
 npm run build
-
-# Run tests
-npm test
-
-# Run linter
-npm run lint
-
-# Fix linting issues
-npm run lint:fix
-
-# Format code
-npm run format
+npm run sample
 ```
-
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
