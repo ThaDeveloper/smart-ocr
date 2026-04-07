@@ -35,6 +35,8 @@ import { SmartOCR } from "smart-ocr";
 const ocr = new SmartOCR({ language: "eng" });
 
 try {
+  await ocr.init("spa");
+
   const pdfText = await ocr.processPDF("./document.pdf");
   const imageText = await ocr.processImage("./page.png");
   const autoText = await ocr.processFile("./document.pdf");
@@ -59,6 +61,15 @@ Options:
 - `pdfRenderScale`: render scale used before OCR on scanned PDF pages. Default: `2`
 - `workerOptions`: options passed to the Tesseract worker, such as `langPath`, `cachePath`, or `logger`
 
+Language codes use Tesseract traineddata identifiers, not 2-letter locale codes. For example:
+
+- `"eng"` for English
+- `"spa"` for Spanish
+- `"fra"` for French
+- `["eng", "spa"]` for multilingual OCR
+
+Use `"eng"`, not `"en"`.
+
 ### `processFile(filePath)`
 
 Routes a supported file to the correct handler based on file extension.
@@ -79,6 +90,8 @@ Supported extensions:
 
 Extracts text from a PDF. Text-native pages are read directly. Scanned pages are rendered to images and OCRed.
 
+The OCR language only affects scanned/image-only pages. If a PDF page already contains selectable text, Smart OCR returns that embedded text directly instead of re-OCRing it.
+
 ### `processImage(imagePath)`
 
 Runs OCR on an image file.
@@ -86,6 +99,8 @@ Runs OCR on an image file.
 ### `init(language?)`
 
 Eagerly initializes the Tesseract worker. This is optional because processing methods initialize on demand.
+
+If you pass a language to `init(language)`, Smart OCR keeps using that language for later OCR calls until you switch it again or create a new instance.
 
 ### `terminate()`
 

@@ -8,6 +8,7 @@ type TestCase = {
 };
 
 type OCRInternals = {
+  activeLanguage: string | string[];
   loadPDFDocument: (pdfPath: string) => Promise<{
     numPages: number;
     getPage: (pageNumber: number) => Promise<{ cleanup: () => void; result: string }>;
@@ -16,7 +17,7 @@ type OCRInternals = {
   }>;
   extractPageTextWithFallback: (page: { cleanup: () => void; result: string }) => Promise<string>;
   extractPageText: (page: unknown) => Promise<string>;
-  ensureInitialized: () => Promise<unknown>;
+  ensureInitialized: (language?: string | string[]) => Promise<unknown>;
   ocrPage: (page: unknown, worker: unknown) => Promise<string>;
   prepareCanvasForOCR: (canvas: ReturnType<typeof createCanvas>) => ReturnType<typeof createCanvas>;
 };
@@ -134,6 +135,43 @@ test("extractPageTextWithFallback uses OCR when extracted text is blank", async 
   assert.strictEqual(result, "ocr-fallback");
   assert.strictEqual(ensureInitializedCalls, 1);
   assert.strictEqual(ocrCalls, 1);
+});
+
+test("init updates the active language used by future OCR calls", async () => {
+  const ocr = new SmartOCR();
+  const internals = asInternals(ocr);
+  const requestedLanguages: Array<string | string[] | undefined> = [];
+
+  internals.ensureInitialized = async (language?: string | string[]) => {
+    requestedLanguages.push(language);
+    return {};
+  };
+
+  await ocr.init("spa");
+
+  assert.deepStrictEqual(requestedLanguages, ["spa"]);
+  assert.strictEqual(internals.activeLanguage, "spa");
+});
+
+test("ensureInitialized reuses the worker for the current active language", async () => {
+  const ocr = new SmartOCR();
+  const internals = ocr as unknown as OCRInternals & {
+    worker: { terminate: () => Promise<void> } | null;
+    workerLanguageKey: string | null;
+  };
+  const worker = {
+    terminate: async () => {
+      throw new Error("worker should not be replaced");
+    },
+  };
+
+  internals.worker = worker;
+  internals.workerLanguageKey = "spa";
+  internals.activeLanguage = "spa";
+
+  const result = await internals.ensureInitialized();
+
+  assert.strictEqual(result, worker);
 });
 
 test("prepareCanvasForOCR crops sparse content and upscales small regions", () => {

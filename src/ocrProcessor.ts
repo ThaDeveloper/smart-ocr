@@ -39,7 +39,7 @@ export class SmartOCR {
   private worker: Worker | null = null;
   private workerLanguageKey: string | null = null;
   private workerTask: Promise<void> = Promise.resolve();
-  private readonly defaultLanguage: string | string[];
+  private activeLanguage: string | string[];
   private readonly pdfRenderScale: number;
   private readonly workerOptions?: OCRWorkerOptions;
 
@@ -48,7 +48,7 @@ export class SmartOCR {
    * @param options Runtime options for the OCR worker and PDF rendering.
    */
   constructor(options: SmartOCROptions = {}) {
-    this.defaultLanguage = options.language ?? DEFAULT_LANGUAGE;
+    this.activeLanguage = SmartOCR.cloneLanguage(options.language ?? DEFAULT_LANGUAGE);
     this.pdfRenderScale = options.pdfRenderScale ?? DEFAULT_PDF_RENDER_SCALE;
     this.workerOptions = options.workerOptions;
   }
@@ -58,8 +58,10 @@ export class SmartOCR {
    * @param language Language(s) to use for OCR processing
    * @returns Promise that resolves when initialization is complete
    */
-  public async init(language: string | string[] = this.defaultLanguage): Promise<void> {
-    await this.ensureInitialized(language);
+  public async init(language: string | string[] = this.activeLanguage): Promise<void> {
+    const nextLanguage = SmartOCR.cloneLanguage(language);
+    await this.ensureInitialized(nextLanguage);
+    this.activeLanguage = nextLanguage;
   }
 
   /**
@@ -238,8 +240,9 @@ export class SmartOCR {
    * @param language Language(s) to initialize.
    * @returns Ready-to-use Tesseract worker.
    */
-  private async ensureInitialized(language: string | string[] = this.defaultLanguage): Promise<Worker> {
-    const normalizedLanguage = SmartOCR.normalizeLanguage(language);
+  private async ensureInitialized(language: string | string[] = this.activeLanguage): Promise<Worker> {
+    const requestedLanguage = SmartOCR.cloneLanguage(language);
+    const normalizedLanguage = SmartOCR.normalizeLanguage(requestedLanguage);
 
     await this.runWorkerTask(async () => {
       if (this.worker && this.workerLanguageKey === normalizedLanguage) {
@@ -252,7 +255,7 @@ export class SmartOCR {
         this.workerLanguageKey = null;
       }
 
-      this.worker = await createWorker(language, 1, this.workerOptions);
+      this.worker = await createWorker(requestedLanguage, 1, this.workerOptions);
       await this.worker.setParameters({
         tessedit_pageseg_mode: PSM.AUTO,
         preserve_interword_spaces: "1",
@@ -289,6 +292,15 @@ export class SmartOCR {
    */
   private static normalizeLanguage(language: string | string[]): string {
     return (Array.isArray(language) ? [...language] : [language]).join("+");
+  }
+
+  /**
+   * Clones language input so the active OCR language is not affected by external mutation.
+   * @param language OCR language or language list.
+   * @returns Copy of the supplied language configuration.
+   */
+  private static cloneLanguage(language: string | string[]): string | string[] {
+    return Array.isArray(language) ? [...language] : language;
   }
 
   /**
