@@ -9,6 +9,8 @@ type TestCase = {
 
 type OCRInternals = {
   activeLanguage: string | string[];
+  scheduler?: unknown;
+  workerLanguageKey?: string | null;
   loadPDFDocument: (pdfPath: string) => Promise<{
     numPages: number;
     getPage: (pageNumber: number) => Promise<{ cleanup: () => void; result: string }>;
@@ -18,7 +20,7 @@ type OCRInternals = {
   extractPageTextWithFallback: (page: { cleanup: () => void; result: string }) => Promise<string>;
   extractPageText: (page: unknown) => Promise<string>;
   ensureInitialized: (language?: string | string[]) => Promise<unknown>;
-  ocrPage: (page: unknown, worker: unknown) => Promise<string>;
+  ocrPage: (page: unknown, scheduler: unknown) => Promise<string>;
   prepareCanvasForOCR: (canvas: ReturnType<typeof createCanvas>) => ReturnType<typeof createCanvas>;
 };
 
@@ -153,25 +155,30 @@ test("init updates the active language used by future OCR calls", async () => {
   assert.strictEqual(internals.activeLanguage, "spa");
 });
 
-test("ensureInitialized reuses the worker for the current active language", async () => {
+test("ensureInitialized reuses the scheduler for the current active language", async () => {
   const ocr = new SmartOCR();
-  const internals = ocr as unknown as OCRInternals & {
-    worker: { terminate: () => Promise<void> } | null;
-    workerLanguageKey: string | null;
-  };
-  const worker = {
+  const internals = asInternals(ocr);
+  const scheduler = {
     terminate: async () => {
-      throw new Error("worker should not be replaced");
+      throw new Error("scheduler should not be replaced");
     },
+    addJob: async () => {
+      throw new Error("scheduler should be reused, not invoked for initialization");
+    },
+    addWorker: () => {
+      throw new Error("scheduler should not add workers when already initialized");
+    },
+    getNumWorkers: () => 1,
+    getQueueLen: () => 0,
   };
 
-  internals.worker = worker;
+  internals.scheduler = scheduler;
   internals.workerLanguageKey = "spa";
   internals.activeLanguage = "spa";
 
   const result = await internals.ensureInitialized();
 
-  assert.strictEqual(result, worker);
+  assert.strictEqual(result, scheduler);
 });
 
 test("prepareCanvasForOCR crops sparse content and upscales small regions", () => {
