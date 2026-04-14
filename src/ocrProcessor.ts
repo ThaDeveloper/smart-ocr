@@ -1,13 +1,23 @@
 import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
 import fs from "fs/promises";
 import path from "path";
-import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
+import type {
+  PDFDocumentProxy,
+  PDFPageProxy,
+  TextItem,
+  getDocument as getPDFDocument,
+} from "pdfjs-dist/types/src/display/api";
 import { createCanvas } from "canvas";
+import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
 
 type OCRWorkerOptions = Partial<NonNullable<Parameters<typeof createWorker>[2]>>;
-type RasterCanvas = ReturnType<typeof createCanvas>;
 type ContentBounds = { minX: number; minY: number; maxX: number; maxY: number };
+type PDFJSLibrary = {
+  getDocument: typeof getPDFDocument;
+  VerbosityLevel: {
+    ERRORS: number;
+  };
+};
 
 const DEFAULT_LANGUAGE = "eng";
 const DEFAULT_PDF_RENDER_SCALE = 2;
@@ -21,6 +31,16 @@ const MAX_SKIP_CROP_RATIO = 0.98;
 const MIN_OCR_CANVAS_WIDTH = 1200;
 const MIN_OCR_CANVAS_HEIGHT = 800;
 const MAX_OCR_UPSCALE_FACTOR = 2;
+let pdfjsLibraryTask: Promise<PDFJSLibrary> | null = null;
+
+/**
+ * Lazily loads the PDF.js Node build that ships as ESM in secure 4.x releases.
+ * @returns Loaded PDF.js module.
+ */
+async function loadPdfJsLibrary(): Promise<PDFJSLibrary> {
+  pdfjsLibraryTask ??= import("pdfjs-dist/legacy/build/pdf.mjs");
+  return pdfjsLibraryTask;
+}
 
 /**
  * Runtime options for configuring OCR behavior.
@@ -154,11 +174,13 @@ export class SmartOCR {
    */
   private async loadPDFDocument(pdfPath: string): Promise<PDFDocumentProxy> {
     const pdfData = await fs.readFile(pdfPath);
+    const pdfjsLib = await loadPdfJsLibrary();
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(pdfData),
       verbosity: pdfjsLib.VerbosityLevel.ERRORS,
       useWorkerFetch: false,
       isEvalSupported: false,
+      CanvasFactory: PDFJSNodeCanvasFactory,
     });
 
     return loadingTask.promise;
@@ -219,7 +241,7 @@ export class SmartOCR {
     const context = canvas.getContext("2d");
 
     await page.render({
-      canvasContext: context,
+      canvasContext: context as unknown as CanvasRenderingContext2D,
       viewport,
     }).promise;
 

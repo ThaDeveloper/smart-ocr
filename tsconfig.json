@@ -1,14 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "CommonJS",
+    "module": "Node16",
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "Node"
+    "moduleResolution": "Node16"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

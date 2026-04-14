@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ocr = new SmartOCR({ language: "eng" });
+const ocr = new SmartOCR({ language: "eng", workerCount: 2 });
 
 try {
   const pdfText = await ocr.processPDF(path.join(__dirname, "sample-scanned.pdf"));
@@ -58,6 +58,7 @@ Options:
 - `language`: Tesseract language or language list. Default: `"eng"`
 - `pdfRenderScale`: render scale used before OCR on scanned PDF pages. Default: `2`
 - `workerOptions`: options passed to the Tesseract worker, such as `langPath`, `cachePath`, or `logger`
+- `workerCount`: Number of OCR workers to run in parallel.
 
 Language codes use Tesseract traineddata identifiers, not 2-letter locale codes. For example:
 
