@@ -1,4 +1,4 @@
-import { createWorker, PSM, Worker } from "tesseract.js";
+import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
 import fs from "fs/promises";
 import path from "path";
@@ -29,6 +29,7 @@ export interface SmartOCROptions {
   language?: string | string[];
   pdfRenderScale?: number;
   workerOptions?: OCRWorkerOptions;
+  workerCount?: number;
 }
 
 /**
@@ -36,12 +37,13 @@ export interface SmartOCROptions {
  * It can handle both scanned and non-scanned PDFs, extracting text efficiently.
  */
 export class SmartOCR {
-  private worker: Worker | null = null;
+  private scheduler: Scheduler | null = null;
   private workerLanguageKey: string | null = null;
   private workerTask: Promise<void> = Promise.resolve();
   private activeLanguage: string | string[];
   private readonly pdfRenderScale: number;
   private readonly workerOptions?: OCRWorkerOptions;
+  private readonly workerCount: number;
 
   /**
    * Creates an OCR processor for images and PDFs.
@@ -51,6 +53,7 @@ export class SmartOCR {
     this.activeLanguage = SmartOCR.cloneLanguage(options.language ?? DEFAULT_LANGUAGE);
     this.pdfRenderScale = options.pdfRenderScale ?? DEFAULT_PDF_RENDER_SCALE;
     this.workerOptions = options.workerOptions;
+    this.workerCount = Math.max(1, options.workerCount ?? 1);
   }
 
   /**
@@ -91,8 +94,8 @@ export class SmartOCR {
    * @returns Extracted text from the image
    */
   public async processImage(imagePath: string): Promise<string> {
-    const worker = await this.ensureInitialized();
-    return this.recognizeImage(worker, imagePath);
+    const scheduler = await this.ensureInitialized();
+    return this.recognizeImage(scheduler, imagePath);
   }
 
   /**
@@ -104,18 +107,21 @@ export class SmartOCR {
     const pdfDocument = await this.loadPDFDocument(pdfPath);
 
     try {
-      const pageTexts: string[] = [];
+      const pageNumbers = Array.from({ length: pdfDocument.numPages }, (_, i) => i + 1);
+      const pageTexts: string[] = new Array(pdfDocument.numPages);
 
-      for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber++) {
-        const page = await pdfDocument.getPage(pageNumber);
-
-        try {
-          const extractedText = await this.extractPageTextWithFallback(page);
-          pageTexts.push(extractedText);
-        } finally {
-          page.cleanup();
-        }
-      }
+      // Fire off all pages to the scheduler.
+      // The scheduler handles the queue, so workers stay 100% busy.
+      await Promise.all(
+        pageNumbers.map(async (pageNumber, index) => {
+          const page = await pdfDocument.getPage(pageNumber);
+          try {
+            pageTexts[index] = await this.extractPageTextWithFallback(page);
+          } finally {
+            page.cleanup();
+          }
+        })
+      );
 
       return pageTexts.join("\n\n").trim();
     } finally {
@@ -130,14 +136,14 @@ export class SmartOCR {
    */
   public async terminate(): Promise<void> {
     await this.runWorkerTask(async () => {
-      if (!this.worker) {
+      if (!this.scheduler) {
         return;
       }
 
-      const workerToTerminate = this.worker;
-      this.worker = null;
+      const schedulerToTerminate = this.scheduler;
+      this.scheduler = null;
       this.workerLanguageKey = null;
-      await workerToTerminate.terminate();
+      await schedulerToTerminate.terminate();
     });
   }
 
@@ -173,8 +179,8 @@ export class SmartOCR {
       // Fall through to OCR when direct text extraction fails for a page.
     }
 
-    const worker = await this.ensureInitialized();
-    return this.ocrPage(page, worker);
+    const scheduler = await this.ensureInitialized();
+    return this.ocrPage(page, scheduler);
   }
 
   /**
@@ -204,10 +210,10 @@ export class SmartOCR {
   /**
    * Renders a PDF page to an image and runs OCR on the result.
    * @param page PDF page to OCR.
-   * @param worker Initialized Tesseract worker.
+   * @param scheduler Initialized Tesseract scheduler.
    * @returns OCR text for the page.
    */
-  private async ocrPage(page: PDFPageProxy, worker: Worker): Promise<string> {
+  private async ocrPage(page: PDFPageProxy, scheduler: Scheduler): Promise<string> {
     const viewport = page.getViewport({ scale: this.pdfRenderScale });
     const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
     const context = canvas.getContext("2d");
@@ -218,19 +224,19 @@ export class SmartOCR {
     }).promise;
 
     const preparedCanvas = this.prepareCanvasForOCR(canvas);
-    return this.recognizeImage(worker, preparedCanvas.toBuffer("image/png"));
+    return this.recognizeImage(scheduler, preparedCanvas.toBuffer("image/png"));
   }
 
   /**
    * Runs OCR on a raster image or buffer.
-   * @param worker Initialized Tesseract worker.
+   * @param scheduler Initialized Tesseract scheduler.
    * @param image Image path or in-memory image buffer.
    * @returns OCR text from the image.
    */
-  private async recognizeImage(worker: Worker, image: string | Buffer): Promise<string> {
+  private async recognizeImage(scheduler: Scheduler, image: string | Buffer): Promise<string> {
     const {
       data: { text },
-    } = await worker.recognize(image);
+    } = (await scheduler.addJob("recognize", image)) as { data: { text: string } };
 
     return text;
   }
@@ -240,35 +246,43 @@ export class SmartOCR {
    * @param language Language(s) to initialize.
    * @returns Ready-to-use Tesseract worker.
    */
-  private async ensureInitialized(language: string | string[] = this.activeLanguage): Promise<Worker> {
+  private async ensureInitialized(language: string | string[] = this.activeLanguage): Promise<Scheduler> {
     const requestedLanguage = SmartOCR.cloneLanguage(language);
     const normalizedLanguage = SmartOCR.normalizeLanguage(requestedLanguage);
 
     await this.runWorkerTask(async () => {
-      if (this.worker && this.workerLanguageKey === normalizedLanguage) {
+      if (this.scheduler && this.workerLanguageKey === normalizedLanguage) {
         return;
       }
 
-      if (this.worker) {
-        await this.worker.terminate();
-        this.worker = null;
+      if (this.scheduler) {
+        await this.scheduler.terminate();
+        this.scheduler = null;
         this.workerLanguageKey = null;
       }
 
-      this.worker = await createWorker(requestedLanguage, 1, this.workerOptions);
-      await this.worker.setParameters({
-        tessedit_pageseg_mode: PSM.AUTO,
-        preserve_interword_spaces: "1",
-        user_defined_dpi: "300",
+      const scheduler = createScheduler();
+      const workerInitPromises = Array.from({ length: this.workerCount }, async () => {
+        const w = await createWorker(requestedLanguage, 1, this.workerOptions);
+        await w.setParameters({
+          tessedit_pageseg_mode: PSM.AUTO,
+          preserve_interword_spaces: "1",
+          user_defined_dpi: "300",
+        });
+        scheduler.addWorker(w);
       });
+
+      await Promise.all(workerInitPromises);
+
+      this.scheduler = scheduler;
       this.workerLanguageKey = normalizedLanguage;
     });
 
-    if (!this.worker) {
-      throw new Error("OCR worker failed to initialize.");
+    if (!this.scheduler) {
+      throw new Error("OCR scheduler failed to initialize.");
     }
 
-    return this.worker;
+    return this.scheduler;
   }
 
   /**
