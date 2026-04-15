@@ -7,7 +7,7 @@ import type {
   TextItem,
   getDocument as getPDFDocument,
 } from "pdfjs-dist/types/src/display/api";
-import { createCanvas } from "canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
 
 type OCRWorkerOptions = Partial<NonNullable<Parameters<typeof createWorker>[2]>>;

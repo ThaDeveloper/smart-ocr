@@ -1,6 +1,7 @@
 import assert from "assert";
-import { createCanvas } from "canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import { SmartOCR } from "../src/ocrProcessor";
+import type { RasterCanvas } from "../src/PDFJSNodeCanvasFactory";
 
 type TestCase = {
   name: string;
@@ -21,7 +22,7 @@ type OCRInternals = {
   extractPageText: (page: unknown) => Promise<string>;
   ensureInitialized: (language?: string | string[]) => Promise<unknown>;
   ocrPage: (page: unknown, scheduler: unknown) => Promise<string>;
-  prepareCanvasForOCR: (canvas: ReturnType<typeof createCanvas>) => ReturnType<typeof createCanvas>;
+  prepareCanvasForOCR: (canvas: RasterCanvas) => RasterCanvas;
 };
 
 const tests: TestCase[] = [];
@@ -184,7 +185,7 @@ test("ensureInitialized reuses the scheduler for the current active language", a
 test("prepareCanvasForOCR crops sparse content and upscales small regions", () => {
   const ocr = new SmartOCR();
   const internals = asInternals(ocr);
-  const canvas = createCanvas(2400, 2400);
+  const canvas: RasterCanvas = createCanvas(2400, 2400);
   const context = canvas.getContext("2d");
 
   context.fillStyle = "#ffffff";

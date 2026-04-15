@@ -3,8 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/smart-ocr?logo=npm)](https://www.npmjs.com/package/smart-ocr)
 [![CI](https://github.com/ThaDeveloper/smart-ocr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ThaDeveloper/smart-ocr/actions/workflows/ci.yml?query=branch%3Amain)
 [![Node Version](https://img.shields.io/node/v/smart-ocr?logo=node.js)](https://www.npmjs.com/package/smart-ocr)
-[![Known Vulnerabilities](https://snyk.io/test/github/ThaDeveloper/smart-ocr/badge.svg?targetFile=package.json)](https://snyk.io/test/github/ThaDeveloper/smart-ocr?targetFile=package.json)
 [![License](https://img.shields.io/npm/l/smart-ocr)](./LICENSE)
+[![Known Vulnerabilities](https://snyk.io/test/github/ThaDeveloper/smart-ocr/badge.svg?targetFile=package.json)](https://snyk.io/test/github/ThaDeveloper/smart-ocr?targetFile=package.json)
 
 `smart-ocr` is a Node.js OCR library for:
 
@@ -18,7 +18,6 @@ For PDFs, each page is handled independently. If a page already contains selecta
 ## Requirements
 
 - Node.js `>=18.18`
-- an environment that can install and run [`canvas`](https://www.npmjs.com/package/canvas)
 
 This package is designed for Node.js. It is not set up for browser use.
 
@@ -109,6 +108,7 @@ Terminates the Tesseract worker and frees resources.
 ## Notes
 
 - Smart OCR is optimized for Node.js workloads, not browser runtimes.
+- Rendering uses [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas), which avoids the extra Cairo system setup required by `canvas`.
 - Scanned PDFs are preprocessed before OCR so sparse content, such as ID cards on large blank pages, is easier to detect.
 - OCR quality still depends on the source document quality, scan resolution, and language data.
 

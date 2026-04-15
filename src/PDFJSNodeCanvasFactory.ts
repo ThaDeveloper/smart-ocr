@@ -1,14 +1,14 @@
-import { createCanvas } from "canvas";
+import { Canvas, CanvasRenderingContext2D, createCanvas } from "@napi-rs/canvas";
 
 /**
  * Node canvas instance used for PDF rendering and OCR preprocessing.
  */
-export type RasterCanvas = ReturnType<typeof createCanvas>;
+export type RasterCanvas = Canvas;
 
 /**
  * 2D rendering context associated with a {@link RasterCanvas}.
  */
-export type RasterCanvasContext = ReturnType<RasterCanvas["getContext"]>;
+export type RasterCanvasContext = CanvasRenderingContext2D;
 
 /**
  * Keeps PDF.js temporary canvases on the same `canvas` implementation we use
