@@ -2,10 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/smart-ocr?logo=npm)](https://www.npmjs.com/package/smart-ocr)
 [![CI](https://github.com/ThaDeveloper/smart-ocr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ThaDeveloper/smart-ocr/actions/workflows/ci.yml?query=branch%3Amain)
-[![Node Version](https://img.shields.io/node/v/smart-ocr?logo=node.js)](https://www.npmjs.com/package/smart-ocr)
 [![License](https://img.shields.io/npm/l/smart-ocr)](./LICENSE)
 [![Socket Badge](https://badge.socket.dev/npm/package/smart-ocr/1.1.3)](https://badge.socket.dev/npm/package/smart-ocr/1.1.3)
-[!Snyk Vulnerabilities](https://img.shields.io/snyk/vulnerabilities/github/ThaDeveloper/smart-ocr)
+[![Known Vulnerabilities](https://snyk.io/test/github/ThaDeveloper/smart-ocr/badge.svg)](https://snyk.io/test/github/ThaDeveloper/smart-ocr)
 
 `smart-ocr` is a Node.js OCR library for:
 
