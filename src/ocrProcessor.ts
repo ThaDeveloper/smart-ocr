@@ -1,23 +1,12 @@
 import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
 import fs from "fs/promises";
 import path from "path";
-import type {
-  PDFDocumentProxy,
-  PDFPageProxy,
-  TextItem,
-  getDocument as getPDFDocument,
-} from "pdfjs-dist/types/src/display/api";
+import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 import { createCanvas } from "@napi-rs/canvas";
+import OpenAI from "openai";
 import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
-
-type OCRWorkerOptions = Partial<NonNullable<Parameters<typeof createWorker>[2]>>;
-type ContentBounds = { minX: number; minY: number; maxX: number; maxY: number };
-type PDFJSLibrary = {
-  getDocument: typeof getPDFDocument;
-  VerbosityLevel: {
-    ERRORS: number;
-  };
-};
+import { StructuredOutputOptions } from "./types/StructuredOutputOptions";
+import { ContentBounds, OCRWorkerOptions, PDFJSLibrary, SmartOCROptions } from "./types/OCROptions";
 
 const DEFAULT_LANGUAGE = "eng";
 const DEFAULT_PDF_RENDER_SCALE = 2;
@@ -43,16 +32,6 @@ async function loadPdfJsLibrary(): Promise<PDFJSLibrary> {
 }
 
 /**
- * Runtime options for configuring OCR behavior.
- */
-export interface SmartOCROptions {
-  language?: string | string[];
-  pdfRenderScale?: number;
-  workerOptions?: OCRWorkerOptions;
-  workerCount?: number;
-}
-
-/**
  * SmartOCR class for processing images and PDFs with OCR capabilities.
  * It can handle both scanned and non-scanned PDFs, extracting text efficiently.
  */
@@ -64,6 +43,7 @@ export class SmartOCR {
   private readonly pdfRenderScale: number;
   private readonly workerOptions?: OCRWorkerOptions;
   private readonly workerCount: number;
+  private readonly structuredOutputOptions?: StructuredOutputOptions;
 
   /**
    * Creates an OCR processor for images and PDFs.
@@ -74,6 +54,7 @@ export class SmartOCR {
     this.pdfRenderScale = options.pdfRenderScale ?? DEFAULT_PDF_RENDER_SCALE;
     this.workerOptions = options.workerOptions;
     this.workerCount = Math.max(1, options.workerCount ?? 1);
+    this.structuredOutputOptions = options.structuredOutputOptions;
   }
 
   /**
@@ -90,9 +71,9 @@ export class SmartOCR {
   /**
    * Processes a file by routing it to the appropriate OCR strategy.
    * @param filePath Path to a supported PDF or image file.
-   * @returns Extracted text from the file.
+   * @returns Extracted text or structured data if options.ai is provided.
    */
-  public async processFile(filePath: string): Promise<string> {
+  public async processFile(filePath: string): Promise<string | { [key: string]: unknown }> {
     const extension = path.extname(filePath).toLowerCase();
 
     if (extension === ".pdf") {
@@ -111,19 +92,25 @@ export class SmartOCR {
   /**
    * Process OCR on an image file
    * @param imagePath Path to the image file
-   * @returns Extracted text from the image
+   * @returns Extracted text or structured data.
    */
-  public async processImage(imagePath: string): Promise<string> {
+  public async processImage(imagePath: string): Promise<string | { [key: string]: unknown }> {
     const scheduler = await this.ensureInitialized();
-    return this.recognizeImage(scheduler, imagePath);
+    const rawText = await this.recognizeImage(scheduler, imagePath);
+
+    if (this.structuredOutputOptions?.ai) {
+      return this.performIDP(rawText);
+    }
+
+    return rawText;
   }
 
   /**
    * Process OCR on a PDF file (both scanned and non-scanned)
    * @param pdfPath Path to the PDF file
-   * @returns Extracted text from all pages
+   * @returns Extracted text from all pages or structured data.
    */
-  public async processPDF(pdfPath: string): Promise<string> {
+  public async processPDF(pdfPath: string): Promise<string | { [key: string]: unknown }> {
     const pdfDocument = await this.loadPDFDocument(pdfPath);
 
     try {
@@ -143,7 +130,13 @@ export class SmartOCR {
         })
       );
 
-      return pageTexts.join("\n\n").trim();
+      const rawText = pageTexts.join("\n\n").trim();
+
+      if (this.structuredOutputOptions?.ai) {
+        return await this.performIDP(rawText);
+      }
+
+      return rawText;
     } finally {
       await pdfDocument.cleanup();
       await pdfDocument.destroy();
@@ -560,5 +553,50 @@ export class SmartOCR {
     upscaledContext.drawImage(canvas, 0, 0, upscaledCanvas.width, upscaledCanvas.height);
 
     return upscaledCanvas;
+  }
+
+  /**
+   * Internal helper to handle Intelligent Document Processing (IDP) using AI based on OCR text.
+   * @param text Raw OCR text to process.
+   * @param options AI configuration and output schema.
+   * @returns Structured data extracted by the AI according to the provided schema.
+   */
+  private async performIDP(text: string): Promise<{ [key: string]: unknown }> {
+    const options = this.structuredOutputOptions;
+    const { provider, model, apiKey } = options?.ai as StructuredOutputOptions["ai"];
+
+    if (provider === "openai") {
+      const openai = new OpenAI({
+        apiKey: apiKey || process.env.OPENAI_API_KEY,
+        dangerouslyAllowBrowser: false,
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: "system",
+            content:
+              options?.ai.prompt ||
+              "You are a data extraction assistant. Extract the requested fields from the following OCR text accurately.",
+          },
+          { role: "user", content: text },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "extracted_data",
+            strict: true,
+            schema: options?.schema as Record<string, unknown>,
+          },
+        },
+      });
+
+      const result = completion.choices[0].message.content;
+      if (!result) throw new Error("AI failed to return content.");
+      return JSON.parse(result);
+    }
+
+    throw new Error(`Unsupported AI provider: ${provider}`);
   }
 }
