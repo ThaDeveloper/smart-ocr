@@ -1,14 +1,7 @@
-import { Canvas, CanvasRenderingContext2D, createCanvas } from "@napi-rs/canvas";
+import { createRasterCanvas } from "./napiCanvas";
+import type { RasterCanvas, RasterCanvasContext } from "./napiCanvas";
 
-/**
- * Node canvas instance used for PDF rendering and OCR preprocessing.
- */
-export type RasterCanvas = Canvas;
-
-/**
- * 2D rendering context associated with a {@link RasterCanvas}.
- */
-export type RasterCanvasContext = CanvasRenderingContext2D;
+export type { RasterCanvas, RasterCanvasContext } from "./napiCanvas";
 
 /**
  * Keeps PDF.js temporary canvases on the same `canvas` implementation we use
@@ -37,7 +30,7 @@ export class PDFJSNodeCanvasFactory {
       throw new Error("Invalid canvas size");
     }
 
-    const canvas = createCanvas(width, height);
+    const canvas = createRasterCanvas(width, height);
     return {
       canvas,
       context: this.getContext(canvas),

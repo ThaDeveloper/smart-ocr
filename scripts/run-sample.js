@@ -24,7 +24,7 @@ async function run(workerCount) {
   //   structuredOutputOptions: {
   //     ai: {
   //       provider: "openai",
-  //       apiKey: process.env.OPEN_AI_API_KEY1,
+  //       apiKey: process.env.OPEN_AI_API_KEY,
   //       model: "gpt-4.1",
   //       prompt: "Extract the text content from the document and return it in a JSON object using the schema provided.",
   //     },

@@ -2,9 +2,9 @@ import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
 import fs from "fs/promises";
 import path from "path";
 import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
-import { createCanvas } from "@napi-rs/canvas";
 import OpenAI from "openai";
 import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
+import { createRasterCanvas } from "./napiCanvas";
 import { StructuredOutputOptions } from "./types/StructuredOutputOptions";
 import { ContentBounds, OCRWorkerOptions, PDFJSLibrary, SmartOCROptions } from "./types/OCROptions";
 
@@ -230,7 +230,7 @@ export class SmartOCR {
    */
   private async ocrPage(page: PDFPageProxy, scheduler: Scheduler): Promise<string> {
     const viewport = page.getViewport({ scale: this.pdfRenderScale });
-    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const canvas = createRasterCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
     const context = canvas.getContext("2d");
 
     await page.render({
@@ -524,7 +524,7 @@ export class SmartOCR {
   private cropCanvas(canvas: RasterCanvas, bounds: ContentBounds): RasterCanvas {
     const width = bounds.maxX - bounds.minX + 1;
     const height = bounds.maxY - bounds.minY + 1;
-    const croppedCanvas = createCanvas(width, height);
+    const croppedCanvas = createRasterCanvas(width, height);
     const croppedContext = croppedCanvas.getContext("2d");
 
     croppedContext.drawImage(canvas, bounds.minX, bounds.minY, width, height, 0, 0, width, height);
@@ -547,7 +547,10 @@ export class SmartOCR {
       return canvas;
     }
 
-    const upscaledCanvas = createCanvas(Math.ceil(canvas.width * scaleFactor), Math.ceil(canvas.height * scaleFactor));
+    const upscaledCanvas = createRasterCanvas(
+      Math.ceil(canvas.width * scaleFactor),
+      Math.ceil(canvas.height * scaleFactor)
+    );
     const upscaledContext = upscaledCanvas.getContext("2d");
     upscaledContext.imageSmoothingEnabled = true;
     upscaledContext.drawImage(canvas, 0, 0, upscaledCanvas.width, upscaledCanvas.height);
