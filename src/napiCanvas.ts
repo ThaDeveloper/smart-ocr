@@ -1,5 +1,4 @@
 import type { Canvas, CanvasRenderingContext2D } from "@napi-rs/canvas";
-import canvasBinding from "@napi-rs/canvas/js-binding.js";
 
 /**
  * Node canvas instance used for PDF rendering and OCR preprocessing.
@@ -18,6 +17,10 @@ export type RasterCanvas = Canvas;
 export type RasterCanvasContext = CanvasRenderingContext2D;
 
 type CanvasElementConstructor = new (width: number, height: number) => RasterCanvas;
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+const canvasBinding = require("@napi-rs/canvas/js-binding.js") as { CanvasElement: CanvasElementConstructor };
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Creates a raster canvas for PDF rendering and OCR preprocessing.

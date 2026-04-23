@@ -1,7 +1,7 @@
 {
   "name": "smart-ocr",
   "version": "1.2.1",
-  "description": "OCR library for both scanned and text-based PDFs in .pdf or image format using tesseract.js",
+  "description": "OCR library for both scanned and text-based PDFs in .pdf or image format using tesseract.js with AI-powered structured output support.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "commonjs",
@@ -63,7 +63,6 @@
   ],
   "dependencies": {
     "@napi-rs/canvas": "^0.1.97",
-    "openai": "^6.34.0",
     "pdfjs-dist": "^4.2.67",
     "tesseract.js": "^6.0.1"
   },

@@ -4,7 +4,7 @@
 
 const path = require("path");
 const { SmartOCR } = require("../dist");
-const process = require("node:process");
+// const process = require("node:process");
 
 const sampleDirectory = path.resolve(__dirname, "..", "src");
 
@@ -15,31 +15,39 @@ async function runSample(ocr, label, fileName) {
 }
 
 async function run(workerCount) {
-  process.loadEnvFile(".env");
+  // process.loadEnvFile(".env");
 
-  // structuredOutputOptions is entirely optional. If not provided, SmartOCR will simply return the raw text without any AI processing.
-  // const ocr = new SmartOCR({
-  //   language: "eng",
-  //   workerCount,
-  //   structuredOutputOptions: {
-  //     ai: {
-  //       provider: "openai",
-  //       apiKey: process.env.OPEN_AI_API_KEY,
-  //       model: "gpt-4.1",
-  //       prompt: "Extract the text content from the document and return it in a JSON object using the schema provided.",
-  //     },
-  //     schema: {
-  //       type: "object",
-  //       properties: {
-  //         sampleDate: { type: "string", format: "date" },
-  //         preparedBy: { type: "string" },
-  //         createdAndTestedUsing: { type: "string" },
-  //       },
-  //       required: ["text", "sampleDate", "preparedBy", "createdAndTestedUsing"],
-  //       additionalProperties: false,
-  //     },
-  //   },
-  // });
+  // const openAiApiKey = process.env.OPENAI_API_KEY;
+
+  // structuredOutputOptions is optional. If not provided, SmartOCR returns raw text.
+  // const ocr = new SmartOCR(
+  //   openAiApiKey
+  //     ? {
+  //         language: "eng",
+  //         workerCount,
+  //         structuredOutputOptions: {
+  //           ai: {
+  //             provider: "openai",
+  //             apiKey: openAiApiKey,
+  //             model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+  //             prompt: "Extract the fields. Use null when a value is missing or unclear.",
+  //           },
+  //           schema: {
+  //             type: "object",
+  //             properties: {
+  //               text: { type: "string" },
+  //               sampleDate: { type: ["string", "null"], format: "date" },
+  //               preparedBy: { type: ["string", "null"] },
+  //               createdAndTestedUsing: { type: ["string", "null"] },
+  //             },
+  //             required: ["text", "sampleDate", "preparedBy", "createdAndTestedUsing"],
+  //             additionalProperties: false,
+  //           },
+  //         },
+  //       }
+  //     : { language: "eng", workerCount }
+  // );
+
   const ocr = new SmartOCR({ language: "eng", workerCount });
 
   await ocr.init();

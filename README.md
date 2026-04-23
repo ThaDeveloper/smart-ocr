@@ -98,8 +98,10 @@ try {
 
 Notes for AI mode:
 
+- `apiKey` is optional if `OPENAI_API_KEY` is already set in the environment
 - `prompt` overrides the default extraction instruction
 - `schema` should be a JSON schema describing the object you want back
+- when using OpenAI strict JSON schema, `required` must include every key in `properties` (and must not include extra keys)
 - today, AI-backed structured output is OpenAI-only
 - when AI mode is enabled, the raw OCR text is not returned by these methods
 
@@ -205,6 +207,12 @@ npm run sample
 ```
 
 `npm run sample` builds the library and runs it against the bundled sample files in `src/`.
+
+To run the sample in AI mode:
+
+```bash
+SMART_OCR_SAMPLE_AI=1 OPENAI_API_KEY=... npm run sample
+```
 
 ## License
 

@@ -2,7 +2,6 @@ import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
 import fs from "fs/promises";
 import path from "path";
 import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
-import OpenAI from "openai";
 import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
 import { createRasterCanvas } from "./napiCanvas";
 import { StructuredOutputOptions } from "./types/StructuredOutputOptions";
@@ -561,7 +560,6 @@ export class SmartOCR {
   /**
    * Internal helper to handle Intelligent Document Processing (IDP) using AI based on OCR text.
    * @param text Raw OCR text to process.
-   * @param options AI configuration and output schema.
    * @returns Structured data extracted by the AI according to the provided schema.
    */
   private async performIDP(text: string): Promise<{ [key: string]: unknown }> {
@@ -569,37 +567,102 @@ export class SmartOCR {
     const { provider, model, apiKey } = options?.ai as StructuredOutputOptions["ai"];
 
     if (provider === "openai") {
-      const openai = new OpenAI({
-        apiKey: apiKey || process.env.OPENAI_API_KEY,
-        dangerouslyAllowBrowser: false,
+      const resolvedApiKey = apiKey || process.env.OPENAI_API_KEY;
+      if (!resolvedApiKey) {
+        throw new Error("Missing OpenAI API key. Provide `structuredOutputOptions.ai.apiKey` or set `OPENAI_API_KEY`.");
+      }
+
+      const completion = await SmartOCR.createOpenAIChatCompletion({
+        apiKey: resolvedApiKey,
+        model,
+        prompt:
+          options?.ai.prompt ||
+          "You are a data extraction assistant. Extract the requested fields from the following OCR text accurately.",
+        text,
+        schema: options?.schema as Record<string, unknown>,
       });
 
-      const completion = await openai.chat.completions.create({
-        model: model,
+      const result = completion.choices?.[0]?.message?.content;
+      if (!result) {
+        throw new Error("AI failed to return content.");
+      }
+
+      try {
+        return JSON.parse(result) as { [key: string]: unknown };
+      } catch (error) {
+        throw new Error(`AI returned invalid JSON. ${(error as Error).message || String(error)}`);
+      }
+    }
+
+    throw new Error(`Unsupported AI provider: ${provider}`);
+  }
+
+  /**
+   * Calls OpenAI's Chat Completions API using the built-in Node fetch implementation.
+   * @param params OpenAI request parameters.
+   * @param params.apiKey OpenAI API key.
+   * @param params.model OpenAI model name.
+   * @param params.prompt System prompt used for extraction.
+   * @param params.text Raw OCR text to extract from.
+   * @param params.schema JSON schema describing the expected response shape.
+   * @returns Parsed OpenAI response.
+   */
+  private static async createOpenAIChatCompletion(params: {
+    apiKey: string;
+    model: string;
+    prompt: string;
+    text: string;
+    schema: Record<string, unknown>;
+  }): Promise<{ choices: Array<{ message: { content: string | null } }> }> {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${params.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: params.model,
         messages: [
-          {
-            role: "system",
-            content:
-              options?.ai.prompt ||
-              "You are a data extraction assistant. Extract the requested fields from the following OCR text accurately.",
-          },
-          { role: "user", content: text },
+          { role: "system", content: params.prompt },
+          { role: "user", content: params.text },
         ],
         response_format: {
           type: "json_schema",
           json_schema: {
             name: "extracted_data",
             strict: true,
-            schema: options?.schema as Record<string, unknown>,
+            schema: params.schema,
           },
         },
-      });
+      }),
+    });
 
-      const result = completion.choices[0].message.content;
-      if (!result) throw new Error("AI failed to return content.");
-      return JSON.parse(result);
+    if (!response.ok) {
+      const detail = await SmartOCR.safeReadErrorBody(response);
+      throw new Error(`OpenAI request failed (${response.status} ${response.statusText}). ${detail}`);
     }
 
-    throw new Error(`Unsupported AI provider: ${provider}`);
+    return (await response.json()) as { choices: Array<{ message: { content: string | null } }> };
+  }
+
+  /**
+   * Best-effort parsing of an HTTP error body for better exception messages.
+   * @param response Failed fetch response.
+   * @returns Short string describing the response body.
+   */
+  private static async safeReadErrorBody(response: Response): Promise<string> {
+    try {
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = (await response.json()) as { error?: { message?: string } };
+        const message = data?.error?.message;
+        return message ? `Error: ${message}` : "Error: request failed.";
+      }
+
+      const text = await response.text();
+      return text ? `Error: ${text.slice(0, 500)}` : "Error: request failed.";
+    } catch {
+      return "Error: request failed.";
+    }
   }
 }
