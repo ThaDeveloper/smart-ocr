@@ -1,5 +1,6 @@
 import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
 import fs from "fs/promises";
+import https from "node:https";
 import path from "path";
 import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
@@ -567,9 +568,9 @@ export class SmartOCR {
     const { provider, model, apiKey } = options?.ai as StructuredOutputOptions["ai"];
 
     if (provider === "openai") {
-      const resolvedApiKey = apiKey || process.env.OPENAI_API_KEY;
+      const resolvedApiKey = apiKey;
       if (!resolvedApiKey) {
-        throw new Error("Missing OpenAI API key. Provide `structuredOutputOptions.ai.apiKey` or set `OPENAI_API_KEY`.");
+        throw new Error("Missing OpenAI API key. Provide `structuredOutputOptions.ai.apiKey`");
       }
 
       const completion = await SmartOCR.createOpenAIChatCompletion({
@@ -598,7 +599,7 @@ export class SmartOCR {
   }
 
   /**
-   * Calls OpenAI's Chat Completions API using the built-in Node fetch implementation.
+   * Calls OpenAI's Chat Completions API using the Node.js built-in https module.
    * @param params OpenAI request parameters.
    * @param params.apiKey OpenAI API key.
    * @param params.model OpenAI model name.
@@ -614,53 +615,74 @@ export class SmartOCR {
     text: string;
     schema: Record<string, unknown>;
   }): Promise<{ choices: Array<{ message: { content: string | null } }> }> {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${params.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: params.model,
-        messages: [
-          { role: "system", content: params.prompt },
-          { role: "user", content: params.text },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "extracted_data",
-            strict: true,
-            schema: params.schema,
-          },
+    const body = JSON.stringify({
+      model: params.model,
+      messages: [
+        { role: "system", content: params.prompt },
+        { role: "user", content: params.text },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "extracted_data",
+          strict: true,
+          schema: params.schema,
         },
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const detail = await SmartOCR.safeReadErrorBody(response);
-      throw new Error(`OpenAI request failed (${response.status} ${response.statusText}). ${detail}`);
-    }
-
-    return (await response.json()) as { choices: Array<{ message: { content: string | null } }> };
+    return new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: "api.openai.com",
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${params.apiKey}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("error", reject);
+          res.on("end", () => {
+            const raw = Buffer.concat(chunks).toString("utf8");
+            if (res.statusCode && res.statusCode >= 400) {
+              const detail = SmartOCR.safeReadErrorBody(res.headers["content-type"] ?? "", raw);
+              reject(new Error(`OpenAI request failed (${res.statusCode} ${res.statusMessage}). ${detail}`));
+              return;
+            }
+            try {
+              resolve(JSON.parse(raw) as { choices: Array<{ message: { content: string | null } }> });
+            } catch (error) {
+              reject(new Error(`OpenAI returned invalid JSON. ${(error as Error).message || String(error)}`));
+            }
+          });
+        }
+      );
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
   }
 
   /**
    * Best-effort parsing of an HTTP error body for better exception messages.
-   * @param response Failed fetch response.
-   * @returns Short string describing the response body.
+   * @param contentType Content-Type header value from the error response.
+   * @param body Raw response body string.
+   * @returns Short string describing the error.
    */
-  private static async safeReadErrorBody(response: Response): Promise<string> {
+  private static safeReadErrorBody(contentType: string, body: string): string {
     try {
-      const contentType = response.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
-        const data = (await response.json()) as { error?: { message?: string } };
+        const data = JSON.parse(body) as { error?: { message?: string } };
         const message = data?.error?.message;
         return message ? `Error: ${message}` : "Error: request failed.";
       }
 
-      const text = await response.text();
-      return text ? `Error: ${text.slice(0, 500)}` : "Error: request failed.";
+      return body ? `Error: ${body.slice(0, 500)}` : "Error: request failed.";
     } catch {
       return "Error: request failed.";
     }
