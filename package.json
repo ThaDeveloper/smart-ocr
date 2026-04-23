@@ -1,6 +1,6 @@
 {
   "name": "smart-ocr",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "OCR library for both scanned and text-based PDFs in .pdf or image format using tesseract.js with AI-powered structured output support.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
