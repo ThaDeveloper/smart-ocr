@@ -254,12 +254,6 @@ npm run sample
 
 `npm run sample` builds the library and runs it against the bundled sample files in `src/`.
 
-To run the sample in AI mode:
-
-```bash
-SMART_OCR_SAMPLE_AI=1 OPENAI_API_KEY=... npm run sample
-```
-
 ## License
 
 MIT
