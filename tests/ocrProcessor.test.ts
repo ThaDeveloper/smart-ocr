@@ -2,27 +2,11 @@ import assert from "assert";
 import { SmartOCR } from "../src/ocrProcessor";
 import type { RasterCanvas } from "../src/PDFJSNodeCanvasFactory";
 import { createRasterCanvas } from "../src/napiCanvas";
+import { asInternals, asLLMStatic, stubHttpsResponse } from "./helpers";
 
 type TestCase = {
   name: string;
   run: () => Promise<void> | void;
-};
-
-type OCRInternals = {
-  activeLanguage: string | string[];
-  scheduler?: unknown;
-  workerLanguageKey?: string | null;
-  loadPDFDocument: (pdfPath: string) => Promise<{
-    numPages: number;
-    getPage: (pageNumber: number) => Promise<{ cleanup: () => void; result: string }>;
-    cleanup: () => Promise<void>;
-    destroy: () => Promise<void>;
-  }>;
-  extractPageTextWithFallback: (page: { cleanup: () => void; result: string }) => Promise<string>;
-  extractPageText: (page: unknown) => Promise<string>;
-  ensureInitialized: (language?: string | string[]) => Promise<unknown>;
-  ocrPage: (page: unknown, scheduler: unknown) => Promise<string>;
-  prepareCanvasForOCR: (canvas: RasterCanvas) => RasterCanvas;
 };
 
 const tests: TestCase[] = [];
@@ -37,14 +21,6 @@ function test(name: string, run: () => Promise<void> | void): void {
   tests.push({ name, run });
 }
 
-/**
- * Casts the OCR instance to a shape that exposes internal helpers for unit tests.
- * @param {SmartOCR} ocr - OCR instance under test.
- * @returns {OCRInternals} OCR instance with internal methods exposed to the test harness.
- */
-function asInternals(ocr: SmartOCR): OCRInternals {
-  return ocr as unknown as OCRInternals;
-}
 
 test("processFile routes PDFs to processPDF", async () => {
   const ocr = new SmartOCR();
@@ -199,6 +175,202 @@ test("prepareCanvasForOCR crops sparse content and upscales small regions", () =
   assert.ok(preparedCanvas.height < canvas.height);
   assert.ok(preparedCanvas.width >= 1200);
   assert.ok(preparedCanvas.height >= 800);
+});
+
+test("performIDP throws when apiKey is missing", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "openai", model: "gpt-4o-mini" },
+      schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+
+  await assert.rejects(
+    async () => asInternals(ocr).performIDP("some text"),
+    /Missing API key for provider "openai"/,
+  );
+});
+
+test("performIDP throws for unsupported provider", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "openai", model: "gpt-4o-mini", apiKey: "test-key" },
+      schema: { type: "object", properties: {}, required: [] },
+    },
+  });
+
+  (ocr as unknown as { structuredOutputOptions: { ai: { provider: string } } }).structuredOutputOptions.ai.provider =
+    "unknown-provider";
+
+  await assert.rejects(
+    async () => asInternals(ocr).performIDP("text"),
+    /Unsupported AI provider: unknown-provider/,
+  );
+});
+
+test("performIDP openai: parses structured JSON from completion content", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "openai", model: "gpt-4o-mini", apiKey: "test-key" },
+      schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ choices: [{ message: { content: JSON.stringify({ name: "Jane" }) } }] }),
+  );
+  try {
+    const result = await asInternals(ocr).performIDP("some text");
+    assert.deepStrictEqual(result, { name: "Jane" });
+  } finally {
+    restore();
+  }
+});
+
+test("performIDP openai: throws when choices content is null", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "openai", model: "gpt-4o-mini", apiKey: "test-key" },
+      schema: { type: "object", properties: {}, required: [] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ choices: [{ message: { content: null } }] }),
+  );
+  try {
+    await assert.rejects(async () => asInternals(ocr).performIDP("text"), /AI failed to return content/);
+  } finally {
+    restore();
+  }
+});
+
+test("performIDP openai: throws when AI returns invalid JSON", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "openai", model: "gpt-4o-mini", apiKey: "test-key" },
+      schema: { type: "object", properties: {}, required: [] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ choices: [{ message: { content: "not-json" } }] }),
+  );
+  try {
+    await assert.rejects(async () => asInternals(ocr).performIDP("text"), /AI returned invalid JSON/);
+  } finally {
+    restore();
+  }
+});
+
+test("performIDP anthropic: returns tool_use input directly", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "anthropic", model: "claude-opus-4-5", apiKey: "test-key" },
+      schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ content: [{ type: "tool_use", input: { name: "Jane" } }] }),
+  );
+  try {
+    const result = await asInternals(ocr).performIDP("some text");
+    assert.deepStrictEqual(result, { name: "Jane" });
+  } finally {
+    restore();
+  }
+});
+
+test("performIDP anthropic: throws when no tool_use block is present", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "anthropic", model: "claude-opus-4-5", apiKey: "test-key" },
+      schema: { type: "object", properties: {}, required: [] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ content: [{ type: "text" }] }),
+  );
+  try {
+    await assert.rejects(async () => asInternals(ocr).performIDP("text"), /AI failed to return content/);
+  } finally {
+    restore();
+  }
+});
+
+test("performIDP gemini: parses structured JSON from candidate text", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "gemini", model: "gemini-2.0-flash", apiKey: "test-key" },
+      schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ name: "Jane" }) }] } }] }),
+  );
+  try {
+    const result = await asInternals(ocr).performIDP("some text");
+    assert.deepStrictEqual(result, { name: "Jane" });
+  } finally {
+    restore();
+  }
+});
+
+test("performIDP gemini: throws when candidates text is missing", async () => {
+  const ocr = new SmartOCR({
+    structuredOutputOptions: {
+      ai: { provider: "gemini", model: "gemini-2.0-flash", apiKey: "test-key" },
+      schema: { type: "object", properties: {}, required: [] },
+    },
+  });
+
+  const restore = stubHttpsResponse(
+    200,
+    JSON.stringify({ candidates: [] }),
+  );
+  try {
+    await assert.rejects(async () => asInternals(ocr).performIDP("text"), /AI failed to return content/);
+  } finally {
+    restore();
+  }
+});
+
+test("normalizeSchemaForGemini converts array types and strips unsupported fields", () => {
+  const normalize = asLLMStatic().normalizeSchemaForGemini;
+
+  const input = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: { type: "string" },
+      age: { type: ["integer", "null"] },
+      dob: { type: ["string", "null"], format: "date" },
+      updatedAt: { type: "string", format: "date-time" },
+    },
+    required: ["name", "age", "dob", "updatedAt"],
+  };
+
+  const output = normalize(input);
+
+  assert.deepStrictEqual(output, {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      age: { type: "integer", nullable: true },
+      dob: { type: "string", nullable: true },
+      updatedAt: { type: "string", format: "date-time" },
+    },
+    required: ["name", "age", "dob", "updatedAt"],
+  });
 });
 
 /**

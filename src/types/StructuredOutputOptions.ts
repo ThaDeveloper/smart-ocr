@@ -1,9 +1,10 @@
 export type StructuredOutputOptions = {
   ai: {
     /**
-     * The AI provider to use for generating structured output. Currently, only "openai" is supported.
+     * The AI provider to use for generating structured output.
+     * Supported values: "openai", "anthropic", "gemini".
      */
-    provider: "openai";
+    provider: "openai" | "anthropic" | "gemini";
     /**
      * The model to use for generating structured output.
      */

@@ -1,12 +1,13 @@
 import { createWorker, createScheduler, PSM, Scheduler } from "tesseract.js";
 import fs from "fs/promises";
-import https from "node:https";
 import path from "path";
 import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 import { PDFJSNodeCanvasFactory, RasterCanvas } from "./PDFJSNodeCanvasFactory";
 import { createRasterCanvas } from "./napiCanvas";
 import { StructuredOutputOptions } from "./types/StructuredOutputOptions";
-import { ContentBounds, OCRWorkerOptions, PDFJSLibrary, SmartOCROptions } from "./types/OCROptions";
+import { ContentBounds, OCRWorkerOptions, SmartOCROptions } from "./types/OCROptions";
+import { LLM } from "./llm";
+import { loadPdfJsLibrary } from "./helpers/constants";
 
 const DEFAULT_LANGUAGE = "eng";
 const DEFAULT_PDF_RENDER_SCALE = 2;
@@ -20,16 +21,6 @@ const MAX_SKIP_CROP_RATIO = 0.98;
 const MIN_OCR_CANVAS_WIDTH = 1200;
 const MIN_OCR_CANVAS_HEIGHT = 800;
 const MAX_OCR_UPSCALE_FACTOR = 2;
-let pdfjsLibraryTask: Promise<PDFJSLibrary> | null = null;
-
-/**
- * Lazily loads the PDF.js Node build that ships as ESM in secure 4.x releases.
- * @returns Loaded PDF.js module.
- */
-async function loadPdfJsLibrary(): Promise<PDFJSLibrary> {
-  pdfjsLibraryTask ??= import("pdfjs-dist/legacy/build/pdf.mjs");
-  return pdfjsLibraryTask;
-}
 
 /**
  * SmartOCR class for processing images and PDFs with OCR capabilities.
@@ -566,28 +557,21 @@ export class SmartOCR {
   private async performIDP(text: string): Promise<{ [key: string]: unknown }> {
     const options = this.structuredOutputOptions;
     const { provider, model, apiKey } = options?.ai as StructuredOutputOptions["ai"];
+    const prompt =
+      options?.ai.prompt ||
+      "You are a data extraction assistant. Extract the requested fields from the following OCR text accurately.";
+    const schema = options?.schema as Record<string, unknown>;
+
+    if (!apiKey) {
+      throw new Error(`Missing API key for provider "${provider}". Provide \`structuredOutputOptions.ai.apiKey\`.`);
+    }
 
     if (provider === "openai") {
-      const resolvedApiKey = apiKey;
-      if (!resolvedApiKey) {
-        throw new Error("Missing OpenAI API key. Provide `structuredOutputOptions.ai.apiKey`");
-      }
-
-      const completion = await SmartOCR.createOpenAIChatCompletion({
-        apiKey: resolvedApiKey,
-        model,
-        prompt:
-          options?.ai.prompt ||
-          "You are a data extraction assistant. Extract the requested fields from the following OCR text accurately.",
-        text,
-        schema: options?.schema as Record<string, unknown>,
-      });
-
+      const completion = await LLM.createOpenAIChatCompletion({ apiKey, model, prompt, text, schema });
       const result = completion.choices?.[0]?.message?.content;
       if (!result) {
         throw new Error("AI failed to return content.");
       }
-
       try {
         return JSON.parse(result) as { [key: string]: unknown };
       } catch (error) {
@@ -595,96 +579,28 @@ export class SmartOCR {
       }
     }
 
-    throw new Error(`Unsupported AI provider: ${provider}`);
-  }
-
-  /**
-   * Calls OpenAI's Chat Completions API using the Node.js built-in https module.
-   * @param params OpenAI request parameters.
-   * @param params.apiKey OpenAI API key.
-   * @param params.model OpenAI model name.
-   * @param params.prompt System prompt used for extraction.
-   * @param params.text Raw OCR text to extract from.
-   * @param params.schema JSON schema describing the expected response shape.
-   * @returns Parsed OpenAI response.
-   */
-  private static async createOpenAIChatCompletion(params: {
-    apiKey: string;
-    model: string;
-    prompt: string;
-    text: string;
-    schema: Record<string, unknown>;
-  }): Promise<{ choices: Array<{ message: { content: string | null } }> }> {
-    const body = JSON.stringify({
-      model: params.model,
-      messages: [
-        { role: "system", content: params.prompt },
-        { role: "user", content: params.text },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "extracted_data",
-          strict: true,
-          schema: params.schema,
-        },
-      },
-    });
-
-    return new Promise((resolve, reject) => {
-      const req = https.request(
-        {
-          hostname: "api.openai.com",
-          path: "/v1/chat/completions",
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${params.apiKey}`,
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(body),
-          },
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("error", reject);
-          res.on("end", () => {
-            const raw = Buffer.concat(chunks).toString("utf8");
-            if (res.statusCode && res.statusCode >= 400) {
-              const detail = SmartOCR.safeReadErrorBody(res.headers["content-type"] ?? "", raw);
-              reject(new Error(`OpenAI request failed (${res.statusCode} ${res.statusMessage}). ${detail}`));
-              return;
-            }
-            try {
-              resolve(JSON.parse(raw) as { choices: Array<{ message: { content: string | null } }> });
-            } catch (error) {
-              reject(new Error(`OpenAI returned invalid JSON. ${(error as Error).message || String(error)}`));
-            }
-          });
-        }
-      );
-      req.on("error", reject);
-      req.write(body);
-      req.end();
-    });
-  }
-
-  /**
-   * Best-effort parsing of an HTTP error body for better exception messages.
-   * @param contentType Content-Type header value from the error response.
-   * @param body Raw response body string.
-   * @returns Short string describing the error.
-   */
-  private static safeReadErrorBody(contentType: string, body: string): string {
-    try {
-      if (contentType.includes("application/json")) {
-        const data = JSON.parse(body) as { error?: { message?: string } };
-        const message = data?.error?.message;
-        return message ? `Error: ${message}` : "Error: request failed.";
+    if (provider === "anthropic") {
+      const completion = await LLM.createAnthropicChatCompletion({ apiKey, model, prompt, text, schema });
+      const toolBlock = completion.content.find((c) => c.type === "tool_use");
+      if (!toolBlock?.input) {
+        throw new Error("AI failed to return content.");
       }
-
-      return body ? `Error: ${body.slice(0, 500)}` : "Error: request failed.";
-    } catch {
-      return "Error: request failed.";
+      return toolBlock.input;
     }
+
+    if (provider === "gemini") {
+      const completion = await LLM.createGeminiChatCompletion({ apiKey, model, prompt, text, schema });
+      const raw = completion.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!raw) {
+        throw new Error("AI failed to return content.");
+      }
+      try {
+        return JSON.parse(raw) as { [key: string]: unknown };
+      } catch (error) {
+        throw new Error(`AI returned invalid JSON. ${(error as Error).message || String(error)}`);
+      }
+    }
+
+    throw new Error(`Unsupported AI provider: ${provider}`);
   }
 }

@@ -56,11 +56,13 @@ Smart OCR can optionally turn extracted text into structured JSON.
 
 When `structuredOutputOptions.ai` is configured, `processFile()`, `processPDF()`, and `processImage()` return a JSON object instead of a plain text string.
 
-Current provider support:
+Supported providers:
 
-- `openai`
+- `openai` - uses [structured outputs](https://platform.openai.com/docs/guides/structured-outputs) (`response_format: json_schema`)
+- `anthropic` - uses [tool use](https://docs.anthropic.com/en/docs/tool-use) to enforce schema-shaped output
+- `gemini` - uses `responseMimeType: "application/json"` with `responseSchema`
 
-Example:
+Example (OpenAI):
 
 ```ts
 import { SmartOCR } from "smart-ocr";
@@ -96,16 +98,60 @@ try {
 }
 ```
 
+Example (Anthropic):
+
+```ts
+const ocr = new SmartOCR({
+  structuredOutputOptions: {
+    ai: {
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    },
+    schema: {
+      type: "object",
+      properties: {
+        fullName: { type: ["string", "null"] },
+        idNumber: { type: ["string", "null"] },
+      },
+      required: ["fullName", "idNumber"],
+    },
+  },
+});
+```
+
+Example (Gemini):
+
+```ts
+const ocr = new SmartOCR({
+  structuredOutputOptions: {
+    ai: {
+      provider: "gemini",
+      model: "gemini-2.0-flash",
+      apiKey: process.env.GOOGLE_API_KEY,
+    },
+    schema: {
+      type: "object",
+      properties: {
+        fullName: { type: ["string", "null"] },
+        idNumber: { type: ["string", "null"] },
+      },
+      required: ["fullName", "idNumber"],
+    },
+  },
+});
+```
+
 Notes for AI mode:
 
-- `apiKey` is optional if `OPENAI_API_KEY` is already set in the environment
+- `apiKey` is required for all providers
 - `prompt` overrides the default extraction instruction
 - `schema` should be a JSON schema describing the object you want back
-- when using OpenAI strict JSON schema, `required` must include every key in `properties` (and must not include extra keys)
-- today, AI-backed structured output is OpenAI-only
+- for OpenAI strict mode, `required` must list every key in `properties`
+- Gemini schemas are automatically normalized: array `type` values (e.g. `["string", "null"]`) are converted to `nullable: true`, and unsupported fields like `additionalProperties` are stripped
 - when AI mode is enabled, the raw OCR text is not returned by these methods
 
-## API
+## Reference
 
 ### `new SmartOCR(options?)`
 
@@ -130,11 +176,11 @@ Use `"eng"`, not `"en"`.
 
 `structuredOutputOptions` shape:
 
-- `ai.provider`: AI provider name. Currently only `"openai"` is supported
+- `ai.provider`: AI provider name. One of `"openai"`, `"anthropic"`, or `"gemini"`
 - `ai.model`: model name to call for structured extraction
-- `ai.apiKey`: Your OPENAI API key.
+- `ai.apiKey`: API key for the chosen provider
 - `ai.prompt`: optional custom extraction prompt
-- `schema`: JSON schema describing the expected response object
+- `schema`: JSON schema describing the expected response object. Gemini schemas are automatically normalized from JSON Schema to Gemini's OpenAPI 3.0 subset.
 
 ### `processFile(filePath)`
 
@@ -193,7 +239,7 @@ Terminates the Tesseract worker and frees resources.
 - Rendering uses [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas), which avoids the extra Cairo system setup required by `canvas`.
 - Scanned PDFs are preprocessed before OCR so sparse content, such as ID cards on large blank pages, is easier to detect.
 - Structured output is an optional post-processing step on top of OCR, not a replacement for OCR itself.
-- AI mode currently supports OpenAI only.
+- AI mode supports OpenAI, Anthropic, and Gemini.
 - OCR quality still depends on the source document quality, scan resolution, and language data.
 
 ## Development
